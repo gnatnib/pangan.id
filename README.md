@@ -1,8 +1,7 @@
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="public/panganidlogo-dark.png" />
-    <img src="https://raw.githubusercontent.com/gnatnib/pangan.id/main/public/panganidlogo.png" alt="Pangan.id" height="64" />
-  </picture>
+  <img src="https://raw.githubusercontent.com/gnatnib/pangan.id/main/public/homelogopanganid.png" 
+       alt="Pangan.id" 
+       height="96" />
 </p>
 
 <h3 align="center">Pangan.id</h3>
