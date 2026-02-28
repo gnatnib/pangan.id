@@ -17,8 +17,22 @@ interface HomeClientProps {
   sparklines: Record<number, TrendPoint[]>;
 }
 
+
+interface SortControlsProps {
+  value: string;
+  onChange: (value: string) => void;
+}
+
 export function HomeClient({ summaries, latestDate, sparklines }: HomeClientProps) {
   const [sort, setSort] = useState("change-desc");
+  
+  const OPTIONS = [
+    { value: "change-desc", label: "Kenaikan Tertinggi" },
+    { value: "change-asc", label: "Penurunan Tertinggi" },
+    { value: "price-desc", label: "Harga Tertinggi" },
+    { value: "price-asc", label: "Harga Terendah" },
+    { value: "name-asc", label: "A — Z" },
+  ];
   // Map commodity selector
   const [mapCommodityId, setMapCommodityId] = useState<number | null>(null);
   // Date range for map & table only
