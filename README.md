@@ -28,7 +28,7 @@
 
 ## What Pangan.id Does
 
-Pangan.id scrapes daily price data from **Bank Indonesia PIHPS** — the most reliable and consistently updated public food price source in Indonesia — and presents it as a fast, mobile-friendly dashboard with trends, provincial comparisons, and an interactive map.
+Pangan.id scrapes daily price data from **Bank Indonesia PIHPS** — the most reliable and consistently updated public food price source in Indonesia and presents it as a fast, mobile-friendly dashboard with trends, provincial comparisons, and an interactive map.
 
 No login. No paywall. No ads. Just data.
 
