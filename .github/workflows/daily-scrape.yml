@@ -1,0 +1,38 @@
+name: Daily Food Price Scraper
+
+on:
+  schedule:
+    # Run at 10:00 UTC (17:00 WIB) — after BI data is typically updated
+    - cron: "0 10 * * *"
+    # Run again at 14:00 UTC (21:00 WIB) — catch late updates
+    - cron: "0 14 * * *"
+
+  # Allow manual trigger
+  workflow_dispatch:
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r scripts/requirements.txt
+
+      - name: Run scraper
+        run: python scripts/scraper.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+
+      - name: Refresh materialized views
+        run: python scripts/refresh_views.py
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}

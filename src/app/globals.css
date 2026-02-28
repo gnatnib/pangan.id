@@ -1,26 +1,152 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+@theme {
+  /* Brand colors */
+  --color-brand-orange: #ee8d00;
+  --color-brand-orange-light: #fef3e0;
+  --color-brand-green: #029746;
+  --color-brand-green-light: #e6f5ec;
+
+  /* Warm neutrals */
+  --color-warm-50: #fafaf8;
+  --color-warm-100: #f5f5f0;
+  --color-warm-200: #e5e5e0;
+  --color-warm-300: #d4d4cf;
+  --color-warm-400: #a3a39e;
+  --color-warm-500: #6b6b66;
+  --color-warm-600: #52524e;
+  --color-warm-700: #3d3d3a;
+  --color-warm-800: #1a1a18;
+  --color-warm-900: #0d0d0c;
+
+  /* Semantic */
+  --color-price-up: #dc2626;
+  --color-price-down: #029746;
+  --color-price-stable: #6b6b66;
+
+  /* Fonts */
+  --font-sans: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* Base styles */
+body {
+  background-color: var(--color-warm-50);
+  color: var(--color-warm-800);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-warm-300);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-warm-400);
+}
+
+/* Selection */
+::selection {
+  background-color: #ee8d0030;
+  color: var(--color-warm-900);
+}
+
+/* Links */
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Rupiah font variant for tabular numbers */
+.font-tabular {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Container utility */
+.container-page {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding-left: 1rem;
+  padding-right: 1rem;
+}
+
+@media (min-width: 640px) {
+  .container-page {
+    padding-left: 1.5rem;
+    padding-right: 1.5rem;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Card base */
+.card {
+  background: white;
+  border: 1px solid var(--color-warm-200);
+  border-radius: 12px;
+  transition:
+    box-shadow 0.2s ease,
+    transform 0.2s ease;
+}
+
+.card:hover {
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+}
+
+/* Badge */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.125rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 500;
+  line-height: 1.5;
+}
+
+.badge-up {
+  background-color: #fef2f2;
+  color: #dc2626;
+}
+
+.badge-down {
+  background-color: #e6f5ec;
+  color: #029746;
+}
+
+.badge-stable {
+  background-color: var(--color-warm-100);
+  color: var(--color-warm-500);
+}
+
+/* Skeleton loading */
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--color-warm-100) 0%,
+    var(--color-warm-200) 50%,
+    var(--color-warm-100) 100%
+  );
+  background-size: 200% 100%;
+  animation: skeleton-pulse 1.5s ease-in-out infinite;
+  border-radius: 6px;
+}
+
+@keyframes skeleton-pulse {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
 }
