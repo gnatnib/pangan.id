@@ -11,6 +11,7 @@ const plusJakarta = Plus_Jakarta_Sans({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://pangan-id.vercel.app"),
   title: {
     default: "Pangan.id — Harga Pangan Indonesia Hari Ini",
     template: "%s — Pangan.id",
