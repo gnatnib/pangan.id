@@ -17,7 +17,6 @@ export function PriceCard({ summary, index = 0, sparkData }: PriceCardProps) {
   const isUp = priceChange > 0;
   const isDown = priceChange < 0;
 
-  // Color for sparkline: red if price went up, green if down
   const sparkColor = isUp ? "#dc2626" : isDown ? "#029746" : "#a3a39e";
 
   return (
@@ -27,16 +26,16 @@ export function PriceCard({ summary, index = 0, sparkData }: PriceCardProps) {
       transition={{ duration: 0.3, delay: index * 0.03 }}
     >
       <Link href={`/komoditas/${commodity.slug}`}>
-        <div className="card p-4 hover:-translate-y-0.5 cursor-pointer group">
+        <div className="card p-3 sm:p-4 hover:-translate-y-0.5 cursor-pointer group overflow-hidden">
           <div className="flex items-start justify-between mb-2">
-            <div className="flex items-center gap-2">
-              <span className="text-lg">{commodity.icon}</span>
-              <span className="text-xs font-medium text-warm-400 uppercase tracking-wide">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <span className="text-base sm:text-lg shrink-0">{commodity.icon}</span>
+              <span className="text-[10px] sm:text-xs font-medium text-warm-400 uppercase tracking-wide truncate">
                 {commodity.category}
               </span>
             </div>
             <span
-              className={`badge ${
+              className={`badge text-[10px] sm:text-xs shrink-0 ${
                 isUp ? "badge-up" : isDown ? "badge-down" : "badge-stable"
               }`}
             >
@@ -45,29 +44,29 @@ export function PriceCard({ summary, index = 0, sparkData }: PriceCardProps) {
             </span>
           </div>
 
-          <h3 className="text-sm font-semibold text-warm-700 mb-1 group-hover:text-brand-orange transition-colors leading-tight">
+          <h3 className="text-xs sm:text-sm font-semibold text-warm-700 mb-1 group-hover:text-brand-orange transition-colors leading-tight line-clamp-2">
             {commodity.name}
           </h3>
 
-          <div className="flex items-end justify-between mt-2">
-            <div>
-              <div className="flex items-baseline gap-1">
-                <span className="text-xl font-bold text-warm-800 font-tabular">
+          <div className="flex items-end justify-between mt-2 gap-1">
+            <div className="min-w-0">
+              <div className="flex items-baseline gap-0.5 sm:gap-1">
+                <span className="text-base sm:text-xl font-bold text-warm-800 font-tabular">
                   Rp {formatPrice(avgPrice)}
                 </span>
-                <span className="text-xs text-warm-400">/{commodity.unit}</span>
+                <span className="text-[10px] sm:text-xs text-warm-400">/{commodity.unit}</span>
               </div>
               {priceChange !== null && priceChange !== 0 && (
-                <p className={`text-xs mt-0.5 font-medium ${getPriceChangeColor(priceChange)}`}>
+                <p className={`text-[10px] sm:text-xs mt-0.5 font-medium ${getPriceChangeColor(priceChange)}`}>
                   {formatChange(priceChange)}
                 </p>
               )}
             </div>
 
-            {/* Sparkline chart */}
+            {/* Sparkline chart — constrained to prevent overflow */}
             {sparkData && sparkData.length > 1 && (
-              <div className="shrink-0 ml-2">
-                <SparkLine data={sparkData} color={sparkColor} width={70} height={28} />
+              <div className="shrink-0 w-[50px] h-[24px] sm:w-[70px] sm:h-[28px]">
+                <SparkLine data={sparkData} color={sparkColor} />
               </div>
             )}
           </div>
@@ -77,10 +76,9 @@ export function PriceCard({ summary, index = 0, sparkData }: PriceCardProps) {
   );
 }
 
-/* Skeleton loader */
 export function PriceCardSkeleton() {
   return (
-    <div className="card p-4">
+    <div className="card p-3 sm:p-4">
       <div className="flex items-start justify-between mb-3">
         <div className="skeleton w-16 h-5" />
         <div className="skeleton w-14 h-5" />

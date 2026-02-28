@@ -111,17 +111,13 @@ export function PriceChart({
   );
 }
 
-/* Mini sparkline for cards — also with tight Y-axis */
+/* Mini sparkline for cards — fills parent container */
 export function SparkLine({
   data,
   color = "#029746",
-  width = 80,
-  height = 32,
 }: {
   data: TrendPoint[];
   color?: string;
-  width?: number;
-  height?: number;
 }) {
   if (!data || data.length < 2) return null;
 
@@ -134,8 +130,8 @@ export function SparkLine({
   const yMax = maxVal + padding;
 
   return (
-    <ResponsiveContainer width={width} height={height}>
-      <LineChart data={data}>
+    <ResponsiveContainer width="100%" height="100%">
+      <LineChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
         <YAxis domain={[yMin, yMax]} hide />
         <Line
           type="monotone"

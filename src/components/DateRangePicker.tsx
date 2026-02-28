@@ -13,7 +13,6 @@ const presets = [
   { label: "7 Hari Terakhir", days: 7 },
   { label: "14 Hari Terakhir", days: 14 },
   { label: "30 Hari Terakhir", days: 30 },
-  { label: "90 Hari Terakhir", days: 90 },
 ];
 
 export function DateRangePicker({

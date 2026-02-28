@@ -95,7 +95,7 @@ export default function TentangPage() {
               "🍗 Daging Ayam",
               "🥩 Daging Sapi (2 kualitas)",
               "🥚 Telur Ayam",
-              "🫗 Minyak Goreng (3 jenis)",
+              "🧴 Minyak Goreng (3 jenis)",
               "🍬 Gula Pasir (2 jenis)",
             ].map((item) => (
               <p key={item} className="text-warm-600">

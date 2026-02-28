@@ -27,7 +27,6 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function CommodityDetailPage({ params }: PageProps) {
   const { slug } = await params;
 
-  // Get commodity
   const { data: commodity } = await supabase
     .from("commodities")
     .select("*")
@@ -36,7 +35,7 @@ export default async function CommodityDetailPage({ params }: PageProps) {
 
   if (!commodity) notFound();
 
-  // Get latest date
+  // Get latest date from actual data
   const { data: latestRow } = await supabase
     .from("prices")
     .select("date")
@@ -47,29 +46,52 @@ export default async function CommodityDetailPage({ params }: PageProps) {
 
   const latestDate = latestRow?.[0]?.date || new Date().toISOString().split("T")[0];
 
-  // Get today's prices per province
-  const { data: todayPrices } = await supabase
-    .from("prices")
-    .select("*, provinces(id, name, slug)")
-    .eq("commodity_id", commodity.id)
-    .eq("date", latestDate)
-    .eq("market_type", "traditional")
-    .gt("price", 0)
-    .order("price", { ascending: true });
+  // 30 days ago
+  const thirtyDaysAgo = new Date(latestDate + "T00:00:00");
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split("T")[0];
 
-  // Get 90-day trend (national average)
-  const ninetyDaysAgo = new Date(latestDate);
-  ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
+  // 5 days ago for multi-day table
+  const fiveDaysAgo = new Date(latestDate + "T00:00:00");
+  fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 4); // latest + 4 previous = 5 days
+  const fiveDaysAgoStr = fiveDaysAgo.toISOString().split("T")[0];
 
-  const { data: trendData } = await supabase
-    .from("national_averages")
-    .select("date, avg_price")
-    .eq("commodity_id", commodity.id)
-    .eq("market_type", "traditional")
-    .gte("date", ninetyDaysAgo.toISOString().split("T")[0])
-    .order("date", { ascending: true });
+  // Parallel queries
+  const [
+    { data: todayPrices },
+    { data: trendData },
+    { data: multiDayRaw },
+  ] = await Promise.all([
+    // Today's prices per province
+    supabase
+      .from("prices")
+      .select("*, provinces(id, name, slug)")
+      .eq("commodity_id", commodity.id)
+      .eq("date", latestDate)
+      .eq("market_type", "traditional")
+      .gt("price", 0)
+      .order("price", { ascending: true }),
+    // 30-day trend (national average)
+    supabase
+      .from("national_averages")
+      .select("date, avg_price")
+      .eq("commodity_id", commodity.id)
+      .eq("market_type", "traditional")
+      .gte("date", thirtyDaysAgoStr)
+      .order("date", { ascending: true }),
+    // 5-day prices for all provinces (for the multi-day table)
+    supabase
+      .from("prices")
+      .select("date, price, province_id, provinces(id, name, slug)")
+      .eq("commodity_id", commodity.id)
+      .eq("market_type", "traditional")
+      .gte("date", fiveDaysAgoStr)
+      .lte("date", latestDate)
+      .gt("price", 0)
+      .order("date", { ascending: true }),
+  ]);
 
-  // Calculate national average
+  // National average
   const prices = (todayPrices || []).map((p) => p.price);
   const nationalAvg = prices.length > 0
     ? prices.reduce((a: number, b: number) => a + b, 0) / prices.length
@@ -80,6 +102,13 @@ export default async function CommodityDetailPage({ params }: PageProps) {
     price: Number(t.avg_price),
   }));
 
+  // Extract unique dates for multi-day table header
+  const multiDayDatesSet = new Set<string>();
+  for (const p of multiDayRaw || []) {
+    multiDayDatesSet.add(p.date);
+  }
+  const multiDayDates = Array.from(multiDayDatesSet).sort();
+
   return (
     <CommodityDetailClient
       commodity={commodity}
@@ -87,6 +116,8 @@ export default async function CommodityDetailPage({ params }: PageProps) {
       nationalAvg={nationalAvg}
       trend={trend}
       latestDate={latestDate}
+      multiDayPrices={multiDayRaw || []}
+      multiDayDates={multiDayDates}
     />
   );
 }
