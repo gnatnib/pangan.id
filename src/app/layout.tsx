@@ -37,13 +37,22 @@ export const metadata: Metadata = {
   },
   manifest: "/favicon_io/site.webmanifest",
   openGraph: {
-    title: "Pangan.id — Harga Pangan Indonesia Hari Ini",
-    description:
-      "Pantau harga bahan pangan strategis di seluruh Indonesia. Data harian dari Bank Indonesia.",
-    type: "website",
-    locale: "id_ID",
-    siteName: "Pangan.id",
-  },
+  title: "Pangan.id — Harga Pangan Indonesia Hari Ini",
+  description:
+    "Pantau harga bahan pangan strategis di seluruh Indonesia. Data harian dari Bank Indonesia.",
+  type: "website",
+  locale: "id_ID",
+  siteName: "Pangan.id",
+  url: "https://pangan-id.vercel.app",
+  images: [
+    {
+      url: "/homelogopanganid.png",
+      width: 1200,
+      height: 630,
+      alt: "Pangan.id",
+    },
+  ],
+},
 };
 
 export default function RootLayout({
