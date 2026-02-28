@@ -1,11 +1,11 @@
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="public/panganidlogo-dark.png" />
-    <img src="public/panganidlogo.png" alt="Pangan.id" height="64" />
+    <img src="https://raw.githubusercontent.com/gnatnib/pangan.id/main/public/panganidlogo.png" alt="Pangan.id" height="64" />
   </picture>
 </p>
 
-<h3 align="center">Pemantauan Harga Pangan Strategis Indonesia</h3>
+<h3 align="center">Pangan.id</h3>
 
 <p align="center">
   <a href="https://pangan-id.vercel.app">Website</a> ·
