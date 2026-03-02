@@ -14,84 +14,87 @@ async function getHomepageData() {
     return { summaries: [], latestDate: new Date().toISOString().split("T")[0], sparklines: {} };
   }
 
-  // Get latest date with data
-  const { data: latestRow } = await supabase
+  // To properly handle weekends/holidays, fetch the last 8 days of data
+  // and extract the distinct dates available
+  const todayStr = new Date().toISOString().split("T")[0];
+  const daysAgo8 = new Date();
+  daysAgo8.setDate(daysAgo8.getDate() - 10);
+  const sparkStartStr = daysAgo8.toISOString().split("T")[0];
+
+  const { data: weekPrices } = await supabase
     .from("prices")
-    .select("date")
+    .select("commodity_id, province_id, date, price")
     .eq("market_type", "traditional")
-    .order("date", { ascending: false })
-    .limit(1);
+    .gte("date", sparkStartStr)
+    .lte("date", todayStr)
+    .gt("price", 0)
+    .order("date", { ascending: false });
 
-  const latestDate = latestRow?.[0]?.date || new Date().toISOString().split("T")[0];
-  const prevDate = new Date(latestDate + "T00:00:00");
-  prevDate.setDate(prevDate.getDate() - 1);
-  const prevDateStr = prevDate.toISOString().split("T")[0];
+  if (!weekPrices || weekPrices.length === 0) {
+    return { summaries: [], latestDate: todayStr, sparklines: {} };
+  }
 
-  // Sparkline start date (7 days ago from latest)
-  const sparkStart = new Date(latestDate + "T00:00:00");
-  sparkStart.setDate(sparkStart.getDate() - 7);
-  const sparkStartStr = sparkStart.toISOString().split("T")[0];
-
-  // Fetch today's, yesterday's, and last 7 days' data in parallel
-  const [{ data: todayPrices }, { data: prevPrices }, { data: weekPrices }] = await Promise.all([
-    supabase
-      .from("prices")
-      .select("commodity_id, province_id, price")
-      .eq("date", latestDate)
-      .eq("market_type", "traditional")
-      .gt("price", 0),
-    supabase
-      .from("prices")
-      .select("commodity_id, province_id, price")
-      .eq("date", prevDateStr)
-      .eq("market_type", "traditional")
-      .gt("price", 0),
-    supabase
-      .from("prices")
-      .select("commodity_id, date, price")
-      .eq("market_type", "traditional")
-      .gte("date", sparkStartStr)
-      .lte("date", latestDate)
-      .gt("price", 0)
-      .order("date", { ascending: true }),
-  ]);
+  // Get distinct dates sorted descending
+  const datesSet = new Set<string>();
+  for (const p of weekPrices) {
+    datesSet.add(p.date);
+  }
+  const sortedDates = Array.from(datesSet).sort((a, b) => b.localeCompare(a));
+  
+  const latestDate = sortedDates[0];
+  const prevDateStr = sortedDates.length > 1 ? sortedDates[1] : null;
 
   // Build sparkline data: commodity_id -> TrendPoint[] (daily national avg)
+  // Sparkline should be chronological (ascending)
   const sparklines: Record<number, TrendPoint[]> = {};
-  if (weekPrices) {
-    const byCommodityDate = new Map<string, number[]>();
-    for (const p of weekPrices) {
-      const key = `${p.commodity_id}:${p.date}`;
-      if (!byCommodityDate.has(key)) byCommodityDate.set(key, []);
-      byCommodityDate.get(key)!.push(p.price);
-    }
-    for (const [key, prices] of byCommodityDate.entries()) {
-      const [cid, date] = key.split(":");
-      const commodityId = Number(cid);
-      if (!sparklines[commodityId]) sparklines[commodityId] = [];
-      sparklines[commodityId].push({
-        date,
-        price: prices.reduce((a, b) => a + b, 0) / prices.length,
-      });
-    }
+  const byCommodityDate = new Map<string, number[]>();
+  
+  for (const p of weekPrices) {
+    const key = `${p.commodity_id}:${p.date}`;
+    if (!byCommodityDate.has(key)) byCommodityDate.set(key, []);
+    byCommodityDate.get(key)!.push(p.price);
+  }
+
+  // Function to round to nearest 50
+  const roundTo50 = (num: number) => Math.round(num / 50) * 50;
+
+  // Calculate daily averages rounded to nearest 50
+  for (const [key, prices] of byCommodityDate.entries()) {
+    const [cid, date] = key.split(":");
+    const commodityId = Number(cid);
+    if (!sparklines[commodityId]) sparklines[commodityId] = [];
+    
+    const avg = prices.reduce((a, b) => a + b, 0) / prices.length;
+    sparklines[commodityId].push({
+      date,
+      price: roundTo50(avg),
+    });
+  }
+
+  // Sort sparklines chronologically
+  for (const cid in sparklines) {
+    sparklines[cid].sort((a, b) => a.date.localeCompare(b.date));
   }
 
   // Build summaries
   const summaries: CommoditySummary[] = [];
+  const todayPrices = weekPrices.filter(p => p.date === latestDate);
+  const prevPrices = prevDateStr ? weekPrices.filter(p => p.date === prevDateStr) : [];
+
   for (const commodity of commodities) {
-    const todayCom = (todayPrices || []).filter((p) => p.commodity_id === commodity.id);
+    const todayCom = todayPrices.filter((p) => p.commodity_id === commodity.id);
     if (todayCom.length === 0) continue;
 
     const prices = todayCom.map((p) => p.price);
-    const avgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
+    const rawAvgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
+    const avgPrice = roundTo50(rawAvgPrice);
     const minPrice = Math.min(...prices);
     const maxPrice = Math.max(...prices);
 
-    const prevCom = (prevPrices || []).filter((p) => p.commodity_id === commodity.id);
     let prevAvgPrice = null;
-    if (prevCom.length > 0) {
-      const pp = prevCom.map((p) => p.price);
-      prevAvgPrice = pp.reduce((a, b) => a + b, 0) / pp.length;
+    const sparkData = sparklines[commodity.id];
+    if (sparkData && sparkData.length > 1) {
+      prevAvgPrice = sparkData[0].price;
     }
 
     const priceChange = prevAvgPrice ? avgPrice - prevAvgPrice : 0;

@@ -6,6 +6,7 @@ interface DateRangePickerProps {
   onStartChange: (date: string) => void;
   onEndChange: (date: string) => void;
   onPreset?: (days: number) => void;
+  activePreset?: number | null;
 }
 
 const presets = [
@@ -21,20 +22,28 @@ export function DateRangePicker({
   onStartChange,
   onEndChange,
   onPreset,
+  activePreset = null,
 }: DateRangePickerProps) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       {/* Preset buttons */}
       <div className="flex flex-wrap gap-1">
-        {presets.map((p) => (
-          <button
-            key={p.days}
-            onClick={() => onPreset?.(p.days)}
-            className="px-2.5 py-1.5 text-xs font-medium rounded-md bg-warm-100 text-warm-500 hover:bg-warm-200 hover:text-warm-700 transition-colors"
-          >
-            {p.label}
-          </button>
-        ))}
+        {presets.map((p) => {
+          const isActive = activePreset === p.days;
+          return (
+            <button
+              key={p.days}
+              onClick={() => onPreset?.(p.days)}
+              className={`px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                isActive
+                  ? "bg-brand-orange text-white shadow-sm"
+                  : "bg-warm-100 text-warm-500 hover:bg-warm-200 hover:text-warm-700"
+              }`}
+            >
+              {p.label}
+            </button>
+          );
+        })}
       </div>
 
       {/* Custom range */}

@@ -24,10 +24,11 @@ export function PriceCard({ summary, index = 0, sparkData }: PriceCardProps) {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: index * 0.03 }}
+      className="h-full"
     >
-      <Link href={`/komoditas/${commodity.slug}`}>
-        <div className="card p-3 sm:p-4 hover:-translate-y-0.5 cursor-pointer group overflow-hidden">
-          <div className="flex items-start justify-between mb-2">
+      <Link href={`/komoditas/${commodity.slug}`} className="block h-full">
+        <div className="card p-3 sm:p-4 hover:-translate-y-0.5 cursor-pointer group overflow-hidden flex flex-col h-full">
+          <div className="flex items-start justify-between mb-2 shrink-0">
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="text-base sm:text-lg shrink-0">{commodity.icon}</span>
               <span className="text-[10px] sm:text-xs font-medium text-warm-400 uppercase tracking-wide truncate">
@@ -44,11 +45,11 @@ export function PriceCard({ summary, index = 0, sparkData }: PriceCardProps) {
             </span>
           </div>
 
-          <h3 className="text-xs sm:text-sm font-semibold text-warm-700 mb-1 group-hover:text-brand-orange transition-colors leading-tight line-clamp-2">
+          <h3 className="text-xs sm:text-sm font-semibold text-warm-700 mb-2 group-hover:text-brand-orange transition-colors leading-tight line-clamp-2 flex-grow">
             {commodity.name}
           </h3>
 
-          <div className="flex items-end justify-between mt-2 gap-1">
+          <div className="flex items-end justify-between mt-auto gap-1 shrink-0">
             <div className="min-w-0">
               <div className="flex items-baseline gap-0.5 sm:gap-1">
                 <span className="text-base sm:text-xl font-bold text-warm-800 font-tabular">
@@ -65,7 +66,7 @@ export function PriceCard({ summary, index = 0, sparkData }: PriceCardProps) {
 
             {/* Sparkline chart — constrained to prevent overflow */}
             {sparkData && sparkData.length > 1 && (
-              <div className="shrink-0 w-[50px] h-[24px] sm:w-[70px] sm:h-[28px]">
+              <div className="shrink-0 w-[60px] h-[28px] sm:w-[80px] sm:h-[34px]">
                 <SparkLine data={sparkData} color={sparkColor} />
               </div>
             )}
@@ -78,13 +79,13 @@ export function PriceCard({ summary, index = 0, sparkData }: PriceCardProps) {
 
 export function PriceCardSkeleton() {
   return (
-    <div className="card p-3 sm:p-4">
-      <div className="flex items-start justify-between mb-3">
+    <div className="card p-3 sm:p-4 h-full flex flex-col">
+      <div className="flex items-start justify-between mb-3 shrink-0">
         <div className="skeleton w-16 h-5" />
         <div className="skeleton w-14 h-5" />
       </div>
-      <div className="skeleton w-3/4 h-4 mb-3" />
-      <div className="skeleton w-1/2 h-7" />
+      <div className="skeleton w-3/4 h-4 mb-3 flex-grow" />
+      <div className="skeleton w-1/2 h-7 mt-auto shrink-0" />
     </div>
   );
 }

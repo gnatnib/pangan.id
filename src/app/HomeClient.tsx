@@ -41,6 +41,7 @@ export function HomeClient({ summaries, latestDate, sparklines }: HomeClientProp
   // Map data
   const [mapPrices, setMapPrices] = useState<any[]>([]);
   const [loadingMap, setLoadingMap] = useState(false);
+  const [activeMapPreset, setActiveMapPreset] = useState<number | null>(1);
   // Provinces lookup
   const [provinces, setProvinces] = useState<Province[]>([]);
 
@@ -124,6 +125,7 @@ export function HomeClient({ summaries, latestDate, sparklines }: HomeClientProp
     : 0;
 
   const handleMapPreset = (days: number) => {
+    setActiveMapPreset(days);
     if (days === 1) {
       setMapStart(latestDate);
       setMapEnd(latestDate);
@@ -249,9 +251,10 @@ export function HomeClient({ summaries, latestDate, sparklines }: HomeClientProp
             <DateRangePicker
               startDate={mapStart}
               endDate={mapEnd}
-              onStartChange={setMapStart}
-              onEndChange={setMapEnd}
+              onStartChange={(d) => { setMapStart(d); setActiveMapPreset(null); }}
+              onEndChange={(d) => { setMapEnd(d); setActiveMapPreset(null); }}
               onPreset={handleMapPreset}
+              activePreset={activeMapPreset}
             />
           </div>
 

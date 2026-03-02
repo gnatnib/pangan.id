@@ -129,18 +129,46 @@ export function SparkLine({
   const yMin = Math.max(0, minVal - padding);
   const yMax = maxVal + padding;
 
+  const gradientId = `spark-${color.replace("#", "")}`;
+
+  const CustomSparkTooltip = ({ active, payload }: any) => {
+    if (active && payload && payload.length) {
+      const point = payload[0].payload as TrendPoint;
+      return (
+        <div className="bg-[#2b3541] border border-[#3f4a59] rounded-md px-3 py-2 shadow-lg z-50">
+          <p className="text-white text-xs whitespace-nowrap mb-1">
+            Harga : Rp {point.price.toLocaleString("id-ID")}
+          </p>
+          <p className="text-white text-xs whitespace-nowrap">
+            Tanggal : {point.date}
+          </p>
+        </div>
+      );
+    }
+    return null;
+  };
+
   return (
     <ResponsiveContainer width="100%" height="100%">
-      <LineChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+      <AreaChart data={data} margin={{ top: 2, right: 2, bottom: 2, left: 2 }}>
+        <defs>
+          <linearGradient id={gradientId} x1="0" y1="0" x2="0" y2="1">
+            <stop offset="5%" stopColor={color} stopOpacity={0.4} />
+            <stop offset="95%" stopColor={color} stopOpacity={0} />
+          </linearGradient>
+        </defs>
         <YAxis domain={[yMin, yMax]} hide />
-        <Line
+        <Tooltip content={<CustomSparkTooltip />} cursor={{ stroke: color, strokeWidth: 1, strokeDasharray: "3 3" }} />
+        <Area
           type="monotone"
           dataKey="price"
           stroke={color}
           strokeWidth={1.5}
-          dot={false}
+          fillOpacity={1}
+          fill={`url(#${gradientId})`}
+          isAnimationActive={false}
         />
-      </LineChart>
+      </AreaChart>
     </ResponsiveContainer>
   );
 }

@@ -35,11 +35,21 @@ export function CommodityDetailClient({
   multiDayPrices,
   multiDayDates,
 }: Props) {
-  const dataStart = trend.length > 0 ? trend[0].date : latestDate;
+  // Default to 7 days ago
+  const defaultStart = new Date(latestDate + "T00:00:00");
+  defaultStart.setDate(defaultStart.getDate() - 7);
+  const defaultStartStr = defaultStart.toISOString().split("T")[0];
+
+  const dataStart = trend.some((t) => t.date <= defaultStartStr)
+    ? defaultStartStr
+    : trend.length > 0
+    ? trend[0].date
+    : latestDate;
   const dataEnd = trend.length > 0 ? trend[trend.length - 1].date : latestDate;
 
   const [startDate, setStartDate] = useState(dataStart);
   const [endDate, setEndDate] = useState(dataEnd);
+  const [activePreset, setActivePreset] = useState<number | null>(7);
   const [historicalPrices, setHistoricalPrices] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
@@ -61,6 +71,8 @@ export function CommodityDetailClient({
     fetchHistory();
   }, [commodity.id, startDate, endDate]);
 
+  const roundTo50 = (num: number) => Math.round(num / 50) * 50;
+
   const dailyAvgs = useMemo(() => {
     const byDate = new Map<string, number[]>();
     for (const p of historicalPrices) {
@@ -70,7 +82,7 @@ export function CommodityDetailClient({
     return Array.from(byDate.entries())
       .map(([date, prices]) => ({
         date,
-        price: Math.round(prices.reduce((a, b) => a + b, 0) / prices.length),
+        price: roundTo50(prices.reduce((a, b) => a + b, 0) / prices.length),
       }))
       .sort((a, b) => a.date.localeCompare(b.date));
   }, [historicalPrices]);
@@ -104,6 +116,7 @@ export function CommodityDetailClient({
   }, [todayPrices]);
 
   const handlePreset = (days: number) => {
+    setActivePreset(days);
     if (days === 1) {
       setStartDate(latestDate);
       setEndDate(latestDate);
@@ -139,7 +152,7 @@ export function CommodityDetailClient({
 
     const natAvg: Record<string, number> = {};
     for (const [date, prices] of natAvgPrices.entries()) {
-      natAvg[date] = Math.round(prices.reduce((a, b) => a + b, 0) / prices.length);
+      natAvg[date] = roundTo50(prices.reduce((a, b) => a + b, 0) / prices.length);
     }
 
     const rows = Array.from(byProvince.entries()).map(([id, data]) => ({
@@ -232,7 +245,14 @@ export function CommodityDetailClient({
               </p>
             )}
           </div>
-          <DateRangePicker startDate={startDate} endDate={endDate} onStartChange={setStartDate} onEndChange={setEndDate} onPreset={handlePreset} />
+          <DateRangePicker 
+            startDate={startDate} 
+            endDate={endDate} 
+            onStartChange={(d) => { setStartDate(d); setActivePreset(null); }} 
+            onEndChange={(d) => { setEndDate(d); setActivePreset(null); }} 
+            onPreset={handlePreset} 
+            activePreset={activePreset}
+          />
         </div>
         {loadingHistory ? (
           <div className="flex items-center justify-center h-48 sm:h-64 text-warm-400 text-sm">Memuat data historis...</div>

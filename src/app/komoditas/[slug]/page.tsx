@@ -93,9 +93,10 @@ export default async function CommodityDetailPage({ params }: PageProps) {
 
   // National average
   const prices = (todayPrices || []).map((p) => p.price);
-  const nationalAvg = prices.length > 0
+  const rawNationalAvg = prices.length > 0
     ? prices.reduce((a: number, b: number) => a + b, 0) / prices.length
     : 0;
+  const nationalAvg = Math.round(rawNationalAvg / 50) * 50;
 
   const trend = (trendData || []).map((t) => ({
     date: t.date,

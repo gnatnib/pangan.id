@@ -31,70 +31,52 @@ logger = logging.getLogger(__name__)
 
 BASE_URL = "https://www.bi.go.id/hargapangan"
 
-# BI PIHPS internal province ID -> BPS province code mapping
-# BI uses its own numbering; BPS uses the official province codes
-BI_TO_BPS_PROVINCE = {
-    1: "11",    # Aceh
-    2: "12",    # Sumatera Utara
-    3: "13",    # Sumatera Barat
-    4: "14",    # Riau
-    5: "21",    # Kepulauan Riau
-    6: "15",    # Jambi
-    7: "17",    # Bengkulu
-    8: "16",    # Sumatera Selatan
-    9: "19",    # Kep. Bangka Belitung
-    10: "18",   # Lampung
-    11: "36",   # Banten
-    12: "32",   # Jawa Barat
-    13: "31",   # DKI Jakarta
-    14: "33",   # Jawa Tengah
-    15: "34",   # DI Yogyakarta
-    16: "35",   # Jawa Timur
-    17: "51",   # Bali
-    18: "52",   # Nusa Tenggara Barat
-    19: "53",   # Nusa Tenggara Timur
-    20: "61",   # Kalimantan Barat
-    21: "63",   # Kalimantan Selatan
-    22: "62",   # Kalimantan Tengah
-    23: "64",   # Kalimantan Timur
-    24: "65",   # Kalimantan Utara
-    25: "75",   # Gorontalo
-    26: "73",   # Sulawesi Selatan
-    27: "74",   # Sulawesi Tenggara
-    28: "72",   # Sulawesi Tengah
-    29: "71",   # Sulawesi Utara
-    30: "76",   # Sulawesi Barat
-    31: "81",   # Maluku
-    32: "82",   # Maluku Utara
-    33: "91",   # Papua
-    34: "92",   # Papua Barat
+import re
+
+# BI province names (from API "name" field) -> BPS province code
+PROV_NAME_TO_BPS = {
+    "Aceh": "11", "Sumatera Utara": "12", "Sumatera Barat": "13",
+    "Riau": "14", "Kepulauan Riau": "21", "Jambi": "15",
+    "Bengkulu": "17", "Sumatera Selatan": "16", "Kep. Bangka Belitung": "19",
+    "Kepulauan Bangka Belitung": "19",
+    "Lampung": "18", "Banten": "36", "Jawa Barat": "32",
+    "DKI Jakarta": "31", "Jawa Tengah": "33", "DI Yogyakarta": "34",
+    "Jawa Timur": "35", "Bali": "51", "Nusa Tenggara Barat": "52",
+    "Nusa Tenggara Timur": "53", "Kalimantan Barat": "61",
+    "Kalimantan Selatan": "63", "Kalimantan Tengah": "62",
+    "Kalimantan Timur": "64", "Kalimantan Utara": "65",
+    "Gorontalo": "75", "Sulawesi Selatan": "73", "Sulawesi Tenggara": "74",
+    "Sulawesi Tengah": "72", "Sulawesi Utara": "71", "Sulawesi Barat": "76",
+    "Maluku": "81", "Maluku Utara": "82", "Papua": "91", "Papua Barat": "92",
+    # Newer province splits
+    "Papua Barat Daya": "96", "Papua Selatan": "93", "Papua Tengah": "94",
+    "Papua Pegunungan": "95",
 }
 
-# BI commodity names -> our commodity slug mapping
-COMMODITY_SLUG_MAP = {
-    "Bawang Merah Ukuran Sedang": "bawang-merah-ukuran-sedang",
-    "Bawang Putih Ukuran Sedang": "bawang-putih-ukuran-sedang",
-    "Beras Kualitas Bawah I": "beras-kualitas-bawah-i",
-    "Beras Kualitas Bawah II": "beras-kualitas-bawah-ii",
-    "Beras Kualitas Medium I": "beras-kualitas-medium-i",
-    "Beras Kualitas Medium II": "beras-kualitas-medium-ii",
-    "Beras Kualitas Super I": "beras-kualitas-super-i",
-    "Beras Kualitas Super II": "beras-kualitas-super-ii",
-    "Cabai Merah Besar": "cabai-merah-besar",
-    "Cabai Merah Keriting": "cabai-merah-keriting",
-    "Cabai Merah Keriting ": "cabai-merah-keriting",  # BI has trailing space
-    "Cabai Rawit Hijau": "cabai-rawit-hijau",
-    "Cabai Rawit Merah": "cabai-rawit-merah",
-    "Daging Ayam Ras Segar": "daging-ayam-ras-segar",
-    "Daging Sapi Kualitas 1": "daging-sapi-kualitas-1",
-    "Daging Sapi Kualitas 2": "daging-sapi-kualitas-2",
-    "Gula Pasir Kualitas Premium": "gula-pasir-kualitas-premium",
-    "Gula Pasir Lokal": "gula-pasir-lokal",
-    "Minyak Goreng Curah": "minyak-goreng-curah",
-    "Minyak Goreng Kemasan Bermerk 1": "minyak-goreng-kemasan-bermerek-1",
-    "Minyak Goreng Kemasan Bermerk 2": "minyak-goreng-kemasan-bermerek-2",
-    "Telur Ayam Ras Segar": "telur-ayam-ras-segar",
-}
+# BI commodity IDs -> our commodity slug mapping
+COMMODITIES = [
+    {"bi_id": "com_1", "slug": "beras-kualitas-bawah-i"},
+    {"bi_id": "com_2", "slug": "beras-kualitas-bawah-ii"},
+    {"bi_id": "com_3", "slug": "beras-kualitas-medium-i"},
+    {"bi_id": "com_4", "slug": "beras-kualitas-medium-ii"},
+    {"bi_id": "com_5", "slug": "beras-kualitas-super-i"},
+    {"bi_id": "com_6", "slug": "beras-kualitas-super-ii"},
+    {"bi_id": "com_7", "slug": "daging-ayam-ras-segar"},
+    {"bi_id": "com_8", "slug": "daging-sapi-kualitas-1"},
+    {"bi_id": "com_9", "slug": "daging-sapi-kualitas-2"},
+    {"bi_id": "com_10", "slug": "telur-ayam-ras-segar"},
+    {"bi_id": "com_11", "slug": "bawang-merah-ukuran-sedang"},
+    {"bi_id": "com_12", "slug": "bawang-putih-ukuran-sedang"},
+    {"bi_id": "com_13", "slug": "cabai-merah-besar"},
+    {"bi_id": "com_14", "slug": "cabai-merah-keriting"},
+    {"bi_id": "com_15", "slug": "cabai-rawit-hijau"},
+    {"bi_id": "com_16", "slug": "cabai-rawit-merah"},
+    {"bi_id": "com_17", "slug": "minyak-goreng-curah"},
+    {"bi_id": "com_18", "slug": "minyak-goreng-kemasan-bermerek-1"},
+    {"bi_id": "com_19", "slug": "minyak-goreng-kemasan-bermerek-2"},
+    {"bi_id": "com_20", "slug": "gula-pasir-kualitas-premium"},
+    {"bi_id": "com_21", "slug": "gula-pasir-lokal"},
+]
 
 # Market type mapping (BI price_type_id -> our market_type)
 MARKET_TYPES = {
@@ -112,7 +94,7 @@ class BIPIHPSScraper:
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "application/json, text/javascript, */*; q=0.01",
             "X-Requested-With": "XMLHttpRequest",
-            "Referer": f"{BASE_URL}",
+            "Referer": f"{BASE_URL}/TabelHarga/PasarTradisionalKomoditas",
         })
         self.supabase: Client = None
         self.commodity_id_cache = {}  # slug -> id
@@ -146,97 +128,99 @@ class BIPIHPSScraper:
             logger.error(f"Failed to initialize session: {e}")
             return False
 
-    def fetch_prices_for_date(self, target_date, market_type_id="1"):
+    def fetch_prices_for_date_range(self, start_date, end_date, market_type_id="1"):
         """
-        Fetch all commodity prices for a specific date using GetGridData1.
-        This endpoint returns per-province, per-commodity summary data.
-        
-        Args:
-            target_date: datetime object for the target date
-            market_type_id: "1" for Traditional Market, "2" for Modern Market
-        
-        Returns:
-            list of price records ready for database upsert
+        Fetch all commodity prices for a specific date range using GetGridDataKomoditas.
+        This endpoint returns per-province data for individual commodities.
         """
-        date_str = target_date.strftime("%b %d, %Y")  # e.g., "Feb 28, 2026"
+        start_str = start_date.strftime("%Y-%m-%d")
+        end_str = end_date.strftime("%Y-%m-%d")
         market_type = MARKET_TYPES.get(market_type_id, "traditional")
 
-        # Fetch data for each commodity category
-        # BI commodity categories: 1=Beras, 2=DagingAyam, 3=DagingSapi, 4=TelurAyam,
-        # 5=BawangMerah, 6=BawangPutih, 7=CabaiMerah, 8=CabaiRawit, 
-        # 9=MinyakGoreng, 10=GulaPasir
-        commodity_categories = range(1, 11)
         all_records = []
+        cache_buster = str(int(time.time() * 1000))
 
-        for cat_id in commodity_categories:
+        for item in COMMODITIES:
+            bi_id = item["bi_id"]
+            slug = item["slug"]
+            commodity_id = self.commodity_id_cache.get(slug)
+            if not commodity_id:
+                logger.debug(f"No DB entry for slug: {slug}")
+                continue
+
             try:
-                url = f"{BASE_URL}/WebSite/Home/GetGridData1"
+                url = f"{BASE_URL}/WebSite/TabelHarga/GetGridDataKomoditas"
                 params = {
-                    "tanggal": date_str,
-                    "commodity": str(cat_id),
-                    "priceType": market_type_id,
-                    "provId": "0",  # 0 = all provinces
+                    "price_type_id": market_type_id,
+                    "comcat_id": bi_id,
+                    "province_id": "",
+                    "regency_id": "",
+                    "showKota": "false",
+                    "showPasar": "false",
+                    "tipe_laporan": "1",
+                    "start_date": start_str,
+                    "end_date": end_str,
+                    "_": cache_buster
                 }
 
                 resp = self.session.get(url, params=params, timeout=30)
                 if resp.status_code != 200:
-                    logger.warning(f"Category {cat_id}: HTTP {resp.status_code}")
+                    logger.warning(f"{slug}: HTTP {resp.status_code}")
                     continue
 
                 data = resp.json()
-                records = data.get("data", [])
-
-                if not records:
-                    logger.warning(f"Category {cat_id}: no data returned")
-                    continue
-
-                for record in records:
-                    prov_id_bi = record.get("ProvID")
-                    commodity_name = record.get("Komoditas", "").strip()
-                    price_value = record.get("Nilai")
-
-                    if not prov_id_bi or not commodity_name or price_value is None:
+                rows = data.get("data", [])
+                
+                cat_count = 0
+                for row in rows:
+                    name = row.get("name", "").strip()
+                    level = row.get("level")
+                    
+                    if level == 0 or name == "Semua Provinsi" or level > 1:
                         continue
-
-                    # Map BI province ID to BPS code
-                    bps_code = BI_TO_BPS_PROVINCE.get(prov_id_bi)
+                        
+                    bps_code = PROV_NAME_TO_BPS.get(name)
                     if not bps_code:
-                        logger.debug(f"Unknown BI province ID: {prov_id_bi}")
+                        logger.debug(f"Unknown province: {name}")
                         continue
+                        
+                    # Extract price for each date column (e.g., "01/03/2026")
+                    for k, val in row.items():
+                        match = re.match(r"^(\d{2})/(\d{2})/(\d{4})$", k)
+                        if not match:
+                            continue
+                        
+                        dd, mm, yyyy = match.groups()
+                        iso_date = f"{yyyy}-{mm}-{dd}"
+                        
+                        if not val or val == "-" or val == "0":
+                            continue
+                            
+                        # Indonesian number formatting removes dots and commas
+                        price_str = str(val).replace(".", "").replace(",", "").strip()
+                        try:
+                            price_num = int(price_str)
+                            if price_num > 0:
+                                all_records.append({
+                                    "commodity_id": commodity_id,
+                                    "province_id": bps_code,
+                                    "price": price_num,
+                                    "market_type": market_type,
+                                    "date": iso_date,
+                                    "source": "bi",
+                                })
+                                cat_count += 1
+                        except ValueError:
+                            pass
 
-                    # Map commodity name to our slug
-                    slug = COMMODITY_SLUG_MAP.get(commodity_name)
-                    if not slug:
-                        logger.debug(f"Unknown commodity: {commodity_name}")
-                        continue
-
-                    # Get our commodity ID
-                    commodity_id = self.commodity_id_cache.get(slug)
-                    if not commodity_id:
-                        logger.debug(f"No DB entry for slug: {slug}")
-                        continue
-
-                    # Skip zero or negative prices
-                    if price_value <= 0:
-                        continue
-
-                    all_records.append({
-                        "commodity_id": commodity_id,
-                        "province_id": bps_code,
-                        "price": float(price_value),
-                        "market_type": market_type,
-                        "date": target_date.strftime("%Y-%m-%d"),
-                        "source": "bi",
-                    })
-
-                logger.info(f"Category {cat_id}: fetched {len(records)} records")
-                time.sleep(1.5)  # Be respectful — 1.5s delay between requests
+                logger.info(f"Commodity {bi_id} ({slug}): fetched {cat_count} records")
+                time.sleep(1)  # Be respectful — 1s delay
 
             except requests.RequestException as e:
-                logger.error(f"Category {cat_id} request failed: {e}")
+                logger.error(f"{slug} request failed: {e}")
                 time.sleep(2)
             except (json.JSONDecodeError, KeyError) as e:
-                logger.error(f"Category {cat_id} parse error: {e}")
+                logger.error(f"{slug} parse error: {e}")
 
         return all_records
 
@@ -268,15 +252,11 @@ class BIPIHPSScraper:
         """Main scraping workflow for today's data."""
         start_time = time.time()
         today = datetime.now()
-        # BI data typically has 1-day lag, so try yesterday first, then today
-        target_dates = [
-            today - timedelta(days=1),
-            today,
-        ]
+        start_date = today - timedelta(days=8)
 
         logger.info("=" * 60)
         logger.info("BI PIHPS Daily Scraper")
-        logger.info(f"Date: {today.strftime('%Y-%m-%d %H:%M:%S')}")
+        logger.info(f"Date range: {start_date.strftime('%Y-%m-%d')} to {today.strftime('%Y-%m-%d')}")
         logger.info("=" * 60)
 
         # Initialize session
@@ -293,15 +273,12 @@ class BIPIHPSScraper:
             market_name = "Traditional" if market_type_id == "1" else "Modern"
             logger.info(f"\nScraping {market_name} Market...")
 
-            for target_date in target_dates:
-                logger.info(f"  Target date: {target_date.strftime('%Y-%m-%d')}")
-                records = self.fetch_prices_for_date(target_date, market_type_id)
-                if records:
-                    total_records.extend(records)
-                    logger.info(f"  Got {len(records)} records for {market_name} market")
-                    break  # If we got data for this date, no need to try the next
-                else:
-                    logger.info(f"  No data for {target_date.strftime('%Y-%m-%d')}, trying next date...")
+            records = self.fetch_prices_for_date_range(start_date, today, market_type_id)
+            if records:
+                total_records.extend(records)
+                logger.info(f"  Got {len(records)} records for {market_name} market")
+            else:
+                logger.info(f"  No data for this date range in {market_name} market")
 
         # Deduplicate records (keep the last one for each unique key)
         seen = {}
@@ -362,3 +339,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
