@@ -25,12 +25,23 @@ jobs:
       - name: Install dependencies
         run: pip install -r scripts/requirements.txt
 
+      - name: Verify secret exists
+        run: |
+          if [ -z "$SUPABASE_KEY" ]; then
+            echo "KEY IS EMPTY"
+            exit 1
+          else
+            echo "KEY EXISTS"
+          fi
+        env:
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+          
       - name: Run scraper
         run: python scripts/scraper.py
         env:
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
-
+      
       - name: Refresh materialized views
         run: python scripts/refresh_views.py
         env:
