@@ -26,15 +26,16 @@ export function AiChatPanel({ latestDate }: AiChatPanelProps) {
     {
       role: "assistant",
       content:
-        `Halo! Saya bisa bantu analisis data harga pangan Pangan.id. ` +
-        `Data terbaru yang tersedia saat ini adalah ${formatDateLong(latestDate)}. ` +
-        `Coba tanya soal tren harga, komoditas termurah, atau perbandingan antar provinsi.`,
+        `Halo, saya Pai - Pangan AI. Saya bantu cari dan jelaskan data harga pangan di Pangan.id. ` +
+        `Data terbaru yang tersedia saat ini ${formatDateLong(latestDate)}. ` +
+        `Kamu bisa tanya harga komoditas, perbandingan antar provinsi, tren kenaikan/penurunan, atau follow-up singkat seperti "yang premium?" dan "kalau nasional?".`,
     },
   ]);
   const [input, setInput] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showFloatingChat, setShowFloatingChat] = useState(false);
+  const [isFloatingMinimized, setIsFloatingMinimized] = useState(false);
   const sectionRef = useRef<HTMLElement | null>(null);
   const mainMessagesRef = useRef<HTMLDivElement | null>(null);
   const floatingMessagesRef = useRef<HTMLDivElement | null>(null);
@@ -70,6 +71,12 @@ export function AiChatPanel({ latestDate }: AiChatPanelProps) {
     };
   }, []);
 
+  useEffect(() => {
+    if (!showFloatingChat) {
+      setIsFloatingMinimized(false);
+    }
+  }, [showFloatingChat]);
+
   function handleTextareaKeyDown(event: KeyboardEvent<HTMLTextAreaElement>) {
     if (event.key === "Enter" && !event.shiftKey) {
       event.preventDefault();
@@ -87,7 +94,9 @@ export function AiChatPanel({ latestDate }: AiChatPanelProps) {
     setError(null);
     setIsLoading(true);
     requestAnimationFrame(() => {
-      const activeInput = showFloatingChat ? floatingInputRef.current : mainInputRef.current;
+      const activeInput = showFloatingChat && !isFloatingMinimized
+        ? floatingInputRef.current
+        : mainInputRef.current;
       activeInput?.focus();
     });
 
@@ -249,30 +258,67 @@ export function AiChatPanel({ latestDate }: AiChatPanelProps) {
 
       <AnimatePresence>
         {showFloatingChat && (
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.98 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 16, scale: 0.98 }}
-            transition={{ duration: 0.22, ease: "easeOut" }}
-            className="fixed bottom-4 right-4 z-50 w-[min(420px,calc(100vw-1rem))] overflow-hidden rounded-3xl border border-warm-200 bg-white/95 shadow-[0_18px_50px_rgba(0,0,0,0.16)] backdrop-blur sm:bottom-6 sm:right-6 sm:w-[430px]"
-          >
-            <div className="flex items-center justify-between border-b border-warm-200 px-4 py-3">
-              <div>
-                <p className="text-sm font-semibold text-warm-800">Chat Pangan AI</p>
-                <p className="text-[11px] text-warm-400">Tetap aktif saat kamu scroll</p>
-              </div>
-              <div className="rounded-full bg-brand-green-light px-3 py-1 text-[11px] font-medium text-brand-green">
-                Floating
-              </div>
-            </div>
+          <AnimatePresence mode="wait">
+            {isFloatingMinimized ? (
+              <motion.button
+                key="floating-minimized"
+                type="button"
+                initial={{ opacity: 0, y: 18, scale: 0.94 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 12, scale: 0.94 }}
+                transition={{ duration: 0.2, ease: "easeOut" }}
+                onClick={() => {
+                  setIsFloatingMinimized(false);
+                  requestAnimationFrame(() => floatingInputRef.current?.focus());
+                }}
+                className="fixed inset-x-3 bottom-3 z-50 flex items-center justify-between rounded-2xl border border-warm-200 bg-white/96 px-4 py-3 text-left shadow-[0_18px_50px_rgba(0,0,0,0.16)] backdrop-blur sm:inset-x-auto sm:right-6 sm:w-[320px]"
+              >
+                <div>
+                  <p className="text-sm font-semibold text-warm-800">Chat Pangan AI</p>
+                  <p className="text-[11px] text-warm-400">Buka lagi untuk lanjut bertanya</p>
+                </div>
+                <span className="rounded-full bg-brand-green-light px-3 py-1 text-[11px] font-medium text-brand-green">
+                  Buka
+                </span>
+              </motion.button>
+            ) : (
+              <motion.div
+                key="floating-expanded"
+                initial={{ opacity: 0, y: 20, scale: 0.98 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 16, scale: 0.98 }}
+                transition={{ duration: 0.22, ease: "easeOut" }}
+                className="fixed inset-x-3 bottom-3 z-50 overflow-hidden rounded-3xl border border-warm-200 bg-white/95 shadow-[0_18px_50px_rgba(0,0,0,0.16)] backdrop-blur sm:inset-x-auto sm:right-6 sm:w-[430px]"
+              >
+                <div className="flex items-center justify-between border-b border-warm-200 px-4 py-3">
+                  <div>
+                    <p className="text-sm font-semibold text-warm-800">Chat Pangan AI</p>
+                    <p className="text-[11px] text-warm-400">Tetap aktif saat kamu scroll</p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <div className="rounded-full bg-brand-green-light px-3 py-1 text-[11px] font-medium text-brand-green">
+                      Floating
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsFloatingMinimized(true)}
+                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-warm-200 bg-white text-base font-semibold text-warm-500 transition hover:border-warm-300 hover:text-warm-700"
+                      aria-label="Minimize chat floating"
+                    >
+                      -
+                    </button>
+                  </div>
+                </div>
 
-            <div className="flex h-[360px] flex-col bg-[linear-gradient(180deg,_rgba(250,250,248,0.92)_0%,_#ffffff_100%)]">
-              {renderMessages(floatingMessagesRef, true, "flex-1 px-4 py-4")}
-              <div className="border-t border-warm-200 px-4 py-3">
-                {renderComposer(floatingInputRef, true)}
-              </div>
-            </div>
-          </motion.div>
+                <div className="flex h-[320px] flex-col bg-[linear-gradient(180deg,_rgba(250,250,248,0.92)_0%,_#ffffff_100%)] sm:h-[360px]">
+                  {renderMessages(floatingMessagesRef, true, "flex-1 px-4 py-4")}
+                  <div className="border-t border-warm-200 px-4 py-3">
+                    {renderComposer(floatingInputRef, true)}
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         )}
       </AnimatePresence>
     </motion.section>
