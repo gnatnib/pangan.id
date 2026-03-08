@@ -158,7 +158,7 @@ export function SparkLine({
           </linearGradient>
         </defs>
         <YAxis domain={[yMin, yMax]} hide />
-        <Tooltip content={<CustomSparkTooltip />} cursor={{ stroke: color, strokeWidth: 1, strokeDasharray: "3 3" }} />
+        <Tooltip content={<CustomSparkTooltip />} wrapperStyle={{ zIndex: 50 }} allowEscapeViewBox={{ x: true, y: true }} cursor={{ stroke: color, strokeWidth: 1, strokeDasharray: "3 3" }} />
         <Area
           type="monotone"
           dataKey="price"

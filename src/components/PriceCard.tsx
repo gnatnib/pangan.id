@@ -24,10 +24,11 @@ export function PriceCard({ summary, index = 0, sparkData }: PriceCardProps) {
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3, delay: index * 0.03 }}
-      className="h-full"
+      className="h-full relative hover:z-50"
+      style={{ overflow: 'visible' }}
     >
-      <Link href={`/komoditas/${commodity.slug}`} className="block h-full">
-        <div className="card p-3 sm:p-4 hover:-translate-y-0.5 cursor-pointer group overflow-hidden flex flex-col h-full">
+      <Link href={`/komoditas/${commodity.slug}`} className="block h-full overflow-visible">
+        <div className="card p-3 sm:p-4 hover:-translate-y-0.5 cursor-pointer group overflow-visible flex flex-col h-full relative">
           <div className="flex items-start justify-between mb-2 shrink-0">
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="text-base sm:text-lg shrink-0">{commodity.icon}</span>
