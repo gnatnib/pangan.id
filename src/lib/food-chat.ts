@@ -108,6 +108,77 @@ const PROVINCE_ALIASES: Record<string, string> = {
   aceh: "nanggroe aceh darussalam",
 };
 
+const FOOD_SCOPE_KEYWORDS = [
+  "pangan",
+  "harga",
+  "komoditas",
+  "bahan pangan",
+  "bahan pokok",
+  "sembako",
+  "provinsi",
+  "nasional",
+  "pasar",
+  "naik",
+  "turun",
+  "termurah",
+  "termahal",
+  "murah",
+  "mahal",
+  "tren",
+  "trend",
+  "historis",
+  "riwayat",
+  "cabai",
+  "beras",
+  "telur",
+  "daging",
+  "gula",
+  "minyak",
+  "bawang",
+];
+
+const OUT_OF_SCOPE_PATTERNS = [
+  "siapa namaku",
+  "siapa nama saya",
+  "siapa aku",
+  "namaku siapa",
+  "nama saya siapa",
+  "kamu tahu nama saya",
+  "siapa presiden",
+  "berapa umurku",
+  "berapa umur saya",
+  "siapa pacarku",
+];
+
+const QUERY_STOPWORDS = new Set([
+  "berapa",
+  "harga",
+  "di",
+  "yang",
+  "untuk",
+  "dan",
+  "atau",
+  "dengan",
+  "dalam",
+  "pada",
+  "apa",
+  "ada",
+  "kah",
+  "itu",
+  "ini",
+  "hari",
+  "terakhir",
+  "nasional",
+  "provinsi",
+  "pasar",
+  "rata",
+  "rata",
+  "berapa",
+  "bahan",
+  "pangan",
+  "komoditas",
+]);
+
 const TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     type: "function",
@@ -316,6 +387,10 @@ function formatPercent(value: number): string {
   return `${sign}${Math.abs(value).toFixed(2).replace(".", ",")}%`;
 }
 
+function capitalizeWords(value: string): string {
+  return value.replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
 function formatDateInput(date: Date): string {
   return date.toISOString().split("T")[0];
 }
@@ -345,6 +420,74 @@ function getPriceDirection(value: unknown, fallback: "cheapest" | "most_expensiv
 
 function getString(value: unknown): string | null {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : null;
+}
+
+function extractMeaningfulTokens(question: string, province: ProvinceRef | null): string[] {
+  const normalizedQuestion = normalizeText(question);
+  const provinceTokens = new Set<string>();
+
+  if (province) {
+    for (const token of normalizeText(province.name).split(" ")) {
+      if (token) provinceTokens.add(token);
+    }
+    for (const token of normalizeText(province.slug.replace(/-/g, " ")).split(" ")) {
+      if (token) provinceTokens.add(token);
+    }
+  }
+
+  return normalizedQuestion
+    .split(" ")
+    .filter((token) => token.length > 1)
+    .filter((token) => !QUERY_STOPWORDS.has(token))
+    .filter((token) => !provinceTokens.has(token));
+}
+
+function getCommodityCandidates(
+  question: string,
+  commodities: CommodityRef[],
+  province: ProvinceRef | null
+): CommodityRef[] {
+  const tokens = extractMeaningfulTokens(question, province);
+  if (tokens.length === 0) return [];
+
+  const scored = commodities
+    .map((commodity) => {
+      const haystack = `${normalizeText(commodity.name)} ${normalizeText(commodity.slug.replace(/-/g, " "))}`;
+      const matchedTokens = tokens.filter((token) => haystack.includes(token));
+
+      return {
+        commodity,
+        matchedCount: matchedTokens.length,
+        exactPhrase: tokens.join(" "),
+        haystack,
+      };
+    })
+    .filter((entry) => entry.matchedCount > 0)
+    .sort((a, b) => {
+      const aExact = a.haystack.includes(a.exactPhrase) ? 1 : 0;
+      const bExact = b.haystack.includes(b.exactPhrase) ? 1 : 0;
+      if (aExact !== bExact) return bExact - aExact;
+      if (a.matchedCount !== b.matchedCount) return b.matchedCount - a.matchedCount;
+      return a.commodity.name.length - b.commodity.name.length;
+    });
+
+  const bestScore = scored[0]?.matchedCount ?? 0;
+  return scored
+    .filter((entry) => entry.matchedCount === bestScore)
+    .map((entry) => entry.commodity);
+}
+
+function getCommodityGroupLabel(
+  question: string,
+  candidates: CommodityRef[],
+  province: ProvinceRef | null
+): string {
+  const tokens = extractMeaningfulTokens(question, province);
+  if (tokens.length > 0) {
+    return capitalizeWords(tokens.join(" "));
+  }
+
+  return candidates[0]?.name || "komoditas ini";
 }
 
 async function getReferenceData(): Promise<ReferenceData> {
@@ -690,6 +833,118 @@ async function getLatestPricesInProvince(args: Record<string, unknown>) {
   };
 }
 
+async function getLatestNationalPrices(args: Record<string, unknown>) {
+  const marketType = getMarketType(args.market_type);
+  const direction = getPriceDirection(args.direction, "cheapest");
+  const limit = clampNumber(args.limit, 5, 1, 10);
+  const latestDate = await getLatestNationalDate(marketType);
+
+  if (!latestDate) {
+    return { ok: false, message: "Belum ada data nasional yang tersedia." };
+  }
+
+  const { commodities } = await getReferenceData();
+  const commodityMap = new Map(commodities.map((item) => [item.id, item]));
+
+  const { data } = await serverSupabase
+    .from("national_averages")
+    .select("commodity_id, avg_price")
+    .eq("date", latestDate)
+    .eq("market_type", marketType)
+    .gt("avg_price", 0);
+
+  const results = (data || [])
+    .map((row) => ({
+      commodity: commodityMap.get(Number(row.commodity_id))?.name || `Komoditas ${row.commodity_id}`,
+      unit: commodityMap.get(Number(row.commodity_id))?.unit || "Kg",
+      price: roundTo50(Number(row.avg_price)),
+    }))
+    .sort((a, b) =>
+      direction === "cheapest" ? a.price - b.price : b.price - a.price
+    )
+    .slice(0, limit);
+
+  return {
+    ok: true,
+    latest_date: latestDate,
+    market_type: marketType,
+    direction,
+    results,
+  };
+}
+
+async function getLatestPricesForCommodityMatches(args: {
+  commodity_ids: number[];
+  province?: ProvinceRef | null;
+  market_type?: "traditional" | "modern";
+}) {
+  const marketType = args.market_type || "traditional";
+  const commodityIds = Array.from(new Set(args.commodity_ids)).filter((id) => Number.isFinite(id));
+
+  if (commodityIds.length === 0) {
+    return { ok: false, message: "Komoditas yang dimaksud belum berhasil diidentifikasi." };
+  }
+
+  const { commodities } = await getReferenceData();
+  const commodityMap = new Map(commodities.map((item) => [item.id, item]));
+
+  if (args.province) {
+    const latestDate = await getLatestProvinceDate(args.province.id, marketType);
+    if (!latestDate) {
+      return { ok: false, message: `Belum ada data untuk ${args.province.name}.` };
+    }
+
+    const { data } = await serverSupabase
+      .from("prices")
+      .select("commodity_id, price")
+      .eq("province_id", args.province.id)
+      .eq("market_type", marketType)
+      .eq("date", latestDate)
+      .in("commodity_id", commodityIds)
+      .gt("price", 0);
+
+    return {
+      ok: true,
+      scope: "province",
+      province: args.province.name,
+      latest_date: latestDate,
+      results: (data || [])
+        .map((row) => ({
+          commodity: commodityMap.get(Number(row.commodity_id))?.name || `Komoditas ${row.commodity_id}`,
+          unit: commodityMap.get(Number(row.commodity_id))?.unit || "Kg",
+          price: roundTo50(Number(row.price)),
+        }))
+        .sort((a, b) => a.price - b.price),
+    };
+  }
+
+  const latestDate = await getLatestNationalDate(marketType);
+  if (!latestDate) {
+    return { ok: false, message: "Belum ada data nasional yang tersedia." };
+  }
+
+  const { data } = await serverSupabase
+    .from("national_averages")
+    .select("commodity_id, avg_price")
+    .eq("market_type", marketType)
+    .eq("date", latestDate)
+    .in("commodity_id", commodityIds)
+    .gt("avg_price", 0);
+
+  return {
+    ok: true,
+    scope: "national",
+    latest_date: latestDate,
+    results: (data || [])
+      .map((row) => ({
+        commodity: commodityMap.get(Number(row.commodity_id))?.name || `Komoditas ${row.commodity_id}`,
+        unit: commodityMap.get(Number(row.commodity_id))?.unit || "Kg",
+        price: roundTo50(Number(row.avg_price)),
+      }))
+      .sort((a, b) => a.price - b.price),
+  };
+}
+
 async function getLatestPrice(args: Record<string, unknown>) {
   const commodityQuery = getString(args.commodity_query);
   if (!commodityQuery) {
@@ -1028,19 +1283,40 @@ function extractRequestedDays(question: string): number {
   return match ? clampNumber(Number(match[1]), 30, 1, 180) : 30;
 }
 
+function isClearlyOutOfScopeQuestion(normalized: string): boolean {
+  return OUT_OF_SCOPE_PATTERNS.some((pattern) => normalized.includes(pattern));
+}
+
+function hasFoodScopeSignals(normalized: string, commodity: CommodityRef | null, province: ProvinceRef | null): boolean {
+  if (commodity || province) return true;
+  return FOOD_SCOPE_KEYWORDS.some((keyword) => normalized.includes(keyword));
+}
+
 function canUseDeterministicReply(question: string): boolean {
   const normalized = normalizeText(question);
 
   return (
+    isClearlyOutOfScopeQuestion(normalized) ||
+    normalized.includes("naik") ||
+    normalized.includes("turun") ||
     (normalized.includes("naik") && normalized.includes("tinggi")) ||
     ((normalized.includes("turun") || normalized.includes("penurunan")) && normalized.includes("tinggi")) ||
     normalized.includes("provinsi mana") ||
     normalized.includes("provinsi apa") ||
     normalized.includes("termurah") ||
     normalized.includes("termahal") ||
+    normalized.includes("murah") ||
+    normalized.includes("mahal") ||
+    normalized.includes("paling murah") ||
+    normalized.includes("paling mahal") ||
+    normalized.includes("harga") ||
     normalized.includes("berapa harga") ||
+    normalized.includes("harga bahan pangan") ||
+    normalized.includes("komoditas apa") ||
+    normalized.includes("bahan pangan apa") ||
     normalized.includes("riwayat") ||
     normalized.includes("historis") ||
+    normalized.includes("perubahan") ||
     normalized.includes("trend") ||
     normalized.includes("tren")
   );
@@ -1051,6 +1327,14 @@ async function generateFallbackReply(question: string): Promise<string> {
   const { commodities, provinces } = await getReferenceData();
   const commodity = findMentionedItem(commodities, question);
   const province = findMentionedItem(provinces, question, PROVINCE_ALIASES);
+  const commodityCandidates = getCommodityCandidates(question, commodities, province);
+  const inferredCommodity = commodity || (commodityCandidates.length === 1 ? commodityCandidates[0] : null);
+  const commodityGroupLabel = getCommodityGroupLabel(question, commodityCandidates, province);
+  const hasFoodSignals = hasFoodScopeSignals(normalized, commodity, province);
+
+  if (isClearlyOutOfScopeQuestion(normalized) || !hasFoodSignals) {
+    return "Maaf, saya hanya bisa membantu pertanyaan seputar harga pangan, komoditas, provinsi, dan tren data di Pangan.id.";
+  }
 
   if (normalized.includes("naik") && normalized.includes("tinggi")) {
     const result = await getTopMovers({
@@ -1084,10 +1368,10 @@ async function generateFallbackReply(question: string): Promise<string> {
     return `${result.scope === "province" ? `Di ${result.province}` : "Secara nasional"}, komoditas dengan penurunan terbesar ${result.requested_days} hari terakhir adalah ${top.commodity}. Harganya berubah dari ${formatRupiah(top.start_price)} menjadi ${formatRupiah(top.end_price)} pada ${top.end_date} (${formatPercent(top.change_pct)} atau ${formatSignedRupiah(top.change)}).`;
   }
 
-  if ((normalized.includes("provinsi mana") || normalized.includes("provinsi apa")) && commodity) {
+  if ((normalized.includes("provinsi mana") || normalized.includes("provinsi apa")) && inferredCommodity) {
     const direction = normalized.includes("mahal") ? "most_expensive" : "cheapest";
     const result = await compareCommodityAcrossProvinces({
-      commodity_query: commodity.name,
+      commodity_query: inferredCommodity.name,
       direction,
       limit: 1,
     });
@@ -1095,10 +1379,10 @@ async function generateFallbackReply(question: string): Promise<string> {
     if (!result.ok) return result.message || "Saya belum bisa membandingkan harga antar provinsi.";
     const top = result.results?.[0];
     if (!top) {
-      return `Saya belum menemukan data lintas provinsi untuk ${commodity.name}.`;
+      return `Saya belum menemukan data lintas provinsi untuk ${inferredCommodity.name}.`;
     }
 
-    return `Pada ${result.latest_date}, ${commodity.name} ${direction === "cheapest" ? "paling murah" : "paling mahal"} ada di ${top.province} dengan harga ${formatRupiah(top.price)}/${top.unit}.`;
+    return `Pada ${result.latest_date}, ${inferredCommodity.name} ${direction === "cheapest" ? "paling murah" : "paling mahal"} ada di ${top.province} dengan harga ${formatRupiah(top.price)}/${top.unit}.`;
   }
 
   if (province && (normalized.includes("termurah") || normalized.includes("termahal"))) {
@@ -1118,9 +1402,38 @@ async function generateFallbackReply(question: string): Promise<string> {
     return `Pada ${result.latest_date}, komoditas ${direction === "cheapest" ? "termurah" : "termahal"} di ${result.province} adalah ${top.commodity} dengan harga ${formatRupiah(top.price)}/${top.unit}.`;
   }
 
-  if ((normalized.includes("berapa harga") || normalized.includes("harga")) && commodity) {
+  if (normalized.includes("termurah") || normalized.includes("termahal") || normalized.includes("paling murah") || normalized.includes("paling mahal")) {
+    const direction = normalized.includes("mahal") ? "most_expensive" : "cheapest";
+
+    if (inferredCommodity) {
+      const result = await compareCommodityAcrossProvinces({
+        commodity_query: inferredCommodity.name,
+        direction,
+        limit: 5,
+      });
+
+      if (!result.ok) return result.message || "Saya belum bisa membandingkan harga komoditas itu antar provinsi.";
+      const top = result.results?.[0];
+      if (!top) {
+        return `Saya belum menemukan data per provinsi untuk ${inferredCommodity.name}.`;
+      }
+
+      return `Pada ${result.latest_date}, ${inferredCommodity.name} ${direction === "cheapest" ? "paling murah" : "paling mahal"} ada di ${top.province} dengan harga ${formatRupiah(top.price)}/${top.unit}.`;
+    }
+
+    const result = await getLatestNationalPrices({ direction, limit: 5 });
+    if (!result.ok) return result.message || "Saya belum bisa mengambil daftar harga nasional terbaru.";
+    const top = result.results?.[0];
+    if (!top) {
+      return "Saya belum menemukan daftar harga nasional terbaru.";
+    }
+
+    return `Pada ${result.latest_date}, komoditas ${direction === "cheapest" ? "termurah" : "termahal"} secara nasional adalah ${top.commodity} dengan harga rata-rata ${formatRupiah(top.price)}/${top.unit}.`;
+  }
+
+  if ((normalized.includes("berapa harga") || normalized.includes("harga")) && inferredCommodity) {
     const result = await getLatestPrice({
-      commodity_query: commodity.name,
+      commodity_query: inferredCommodity.name,
       province_query: province?.name,
     });
 
@@ -1133,9 +1446,49 @@ async function generateFallbackReply(question: string): Promise<string> {
     return `Harga rata-rata nasional ${result.commodity} pada ${result.latest_date} adalah ${formatRupiah(result.price ?? 0)}/${result.unit}.`;
   }
 
-  if ((normalized.includes("riwayat") || normalized.includes("historis") || normalized.includes("trend") || normalized.includes("tren")) && commodity) {
+  if ((normalized.includes("berapa harga") || normalized.includes("harga")) && commodityCandidates.length > 1) {
+    const result = await getLatestPricesForCommodityMatches({
+      commodity_ids: commodityCandidates.map((item) => item.id),
+      province,
+    });
+
+    if (!result.ok) return result.message || "Saya belum bisa mengambil daftar harga komoditas yang kamu maksud.";
+
+    const results = (result.results || []).slice(0, 8);
+    if (results.length === 0) {
+      return `Saya belum menemukan daftar harga untuk kelompok ${commodityGroupLabel}${province ? ` di ${province.name}` : ""}.`;
+    }
+
+    const intro = province
+      ? `${commodityGroupLabel} yang mana? Untuk ${province.name}, pada ${result.latest_date} ada beberapa jenis berikut:`
+      : `${commodityGroupLabel} yang mana? Untuk rata-rata nasional pada ${result.latest_date}, ada beberapa jenis berikut:`;
+    const lines = results.map(
+      (item, index) => `${index + 1}. ${item.commodity}: ${formatRupiah(item.price)}/${item.unit}`
+    );
+
+    return `${intro}\n\n${lines.join("\n")}\n\nAda jenis ${commodityGroupLabel.toLowerCase()} tertentu yang ingin kamu tanyakan?`;
+  }
+
+  if ((normalized.includes("naik") || normalized.includes("turun") || normalized.includes("perubahan")) && inferredCommodity) {
     const result = await getCommodityHistory({
-      commodity_query: commodity.name,
+      commodity_query: inferredCommodity.name,
+      province_query: province?.name,
+      days: extractRequestedDays(question),
+    });
+
+    if (!result.ok) return result.message || "Saya belum bisa mengambil perubahan harga komoditas tersebut.";
+
+    const directionLabel = (result.change ?? 0) > 0 ? "naik" : (result.change ?? 0) < 0 ? "turun" : "stabil";
+    const points = result.points || [];
+    const firstPoint = points[0];
+    const lastPoint = points[points.length - 1];
+
+    return `${inferredCommodity.name}${result.scope === "province" ? ` di ${result.province}` : " secara nasional"} ${directionLabel} dari ${formatRupiah(firstPoint?.price ?? 0)} menjadi ${formatRupiah(lastPoint?.price ?? 0)}/${result.unit} pada periode ${result.start_date} sampai ${result.end_date} (${formatPercent(result.change_pct ?? 0)}).`;
+  }
+
+  if ((normalized.includes("riwayat") || normalized.includes("historis") || normalized.includes("trend") || normalized.includes("tren")) && inferredCommodity) {
+    const result = await getCommodityHistory({
+      commodity_query: inferredCommodity.name,
       province_query: province?.name,
       days: extractRequestedDays(question),
     });
@@ -1146,16 +1499,21 @@ async function generateFallbackReply(question: string): Promise<string> {
     const firstPoint = points[0];
     const lastPoint = points[points.length - 1];
     if (!firstPoint || !lastPoint) {
-      return `Saya belum menemukan histori harga untuk ${commodity.name}${result.scope === "province" ? ` di ${result.province}` : ""}.`;
+      return `Saya belum menemukan histori harga untuk ${inferredCommodity.name}${result.scope === "province" ? ` di ${result.province}` : ""}.`;
     }
 
-    return `Untuk ${commodity.name}${result.scope === "province" ? ` di ${result.province}` : " secara nasional"}, periode ${result.start_date} sampai ${result.end_date} bergerak dari ${formatRupiah(firstPoint.price ?? 0)} menjadi ${formatRupiah(lastPoint.price ?? 0)}/${result.unit} (${formatPercent(result.change_pct ?? 0)} atau ${formatSignedRupiah(result.change ?? 0)}).`;
+    return `Untuk ${inferredCommodity.name}${result.scope === "province" ? ` di ${result.province}` : " secara nasional"}, periode ${result.start_date} sampai ${result.end_date} bergerak dari ${formatRupiah(firstPoint.price ?? 0)} menjadi ${formatRupiah(lastPoint.price ?? 0)}/${result.unit} (${formatPercent(result.change_pct ?? 0)} atau ${formatSignedRupiah(result.change ?? 0)}).`;
   }
 
-  const overview = await getSiteOverview({});
-  if (!overview.ok) return overview.message || "Saya belum bisa mengambil ringkasan data pangan terbaru.";
+  if (commodityCandidates.length > 1) {
+    return `Saya menemukan beberapa jenis untuk ${commodityGroupLabel}. Coba perjelas salah satunya, misalnya ${commodityCandidates.slice(0, 3).map((item) => item.name).join(", ")}.`;
+  }
 
-  return `Saya belum paham pertanyaannya secara spesifik, tapi saya bisa bantu soal harga pangan Pangan.id. Contoh: komoditas yang naik paling tinggi 30 hari terakhir, harga cabai rawit merah nasional hari ini, komoditas termurah di Jogja, atau provinsi termurah untuk telur ayam ras segar. Data terbaru saat ini ${overview.latest_date}.`;
+  if (inferredCommodity || province) {
+    return "Saya bisa bantu, tapi pertanyaannya masih kurang spesifik. Coba sebutkan yang ingin dicari: harga terbaru, perubahan 7/30 hari, komoditas termurah/termahal, atau perbandingan antar provinsi.";
+  }
+
+  return "Saya bisa bantu analisis harga pangan, tapi perlu detail yang lebih jelas. Misalnya: komoditas apa, provinsi mana, dan periode berapa hari yang ingin dibandingkan.";
 }
 
 function sanitizeHistory(messages: ClientChatMessage[]): ClientChatMessage[] {

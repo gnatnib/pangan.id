@@ -22,18 +22,12 @@ export async function POST(request: Request) {
 
     const reply = await generateFoodChatReply(messages);
     return NextResponse.json({ reply });
-  } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown error";
-    const status = message.includes("AI_API_KEY") || message.includes("OLLAMA_API_KEY") ? 503 : 500;
-
+  } catch {
     return NextResponse.json(
       {
-        error:
-          status === 503
-            ? "AI chat belum aktif. Tambahkan OLLAMA_API_KEY untuk Ollama Cloud atau AI_API_KEY untuk provider OpenAI-compatible."
-            : "Terjadi error saat memproses chat AI.",
+        error: "Maaf, saya sedang kesulitan memproses pertanyaan itu. Coba ubah pertanyaannya tetap dalam scope harga pangan, komoditas, provinsi, atau tren harga.",
       },
-      { status }
+      { status: 500 }
     );
   }
 }
