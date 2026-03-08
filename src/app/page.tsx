@@ -5,6 +5,8 @@ import { HomeClient } from "./HomeClient";
 export const revalidate = 3600;
 
 async function getHomepageData() {
+  const roundTo50 = (num: number) => Math.round(num / 50) * 50;
+
   const { data: commodities } = await supabase
     .from("commodities")
     .select("*")
@@ -29,18 +31,42 @@ async function getHomepageData() {
 
   const latestDate = latestDateRow[0].date;
 
-  // Step 2: Calculate key dates
-  const weekAgoDate = new Date(latestDate + "T00:00:00");
-  weekAgoDate.setDate(weekAgoDate.getDate() - 7);
-  const weekAgoStr = weekAgoDate.toISOString().split("T")[0];
+  // Step 2: Build BI-like sparkline window from the latest 6 available update dates
+  const { data: recentAverageRows } = await supabase
+    .from("national_averages")
+    .select("date")
+    .eq("market_type", "traditional")
+    .lte("date", latestDate)
+    .order("date", { ascending: false })
+    .limit(200);
 
-  const sparkStartDate = new Date(latestDate + "T00:00:00");
-  sparkStartDate.setDate(sparkStartDate.getDate() - 14);
-  const sparkStartStr = sparkStartDate.toISOString().split("T")[0];
+  if (!recentAverageRows || recentAverageRows.length === 0) {
+    return { summaries: [], latestDate, sparklines: {} };
+  }
 
-  // Step 3: Fetch data in parallel using targeted queries (each under 1000-row limit)
-  const [todayResult, weekAgoResult, sparklineResult] = await Promise.all([
-    // Today's raw prices (for per-province stats) — ~714 rows
+  const recentDatesDesc: string[] = [];
+  const seenDates = new Set<string>();
+
+  for (const row of recentAverageRows) {
+    if (!seenDates.has(row.date)) {
+      seenDates.add(row.date);
+      recentDatesDesc.push(row.date);
+    }
+    if (recentDatesDesc.length === 6) break;
+  }
+
+  const sparkDates = [...recentDatesDesc].reverse();
+
+  if (sparkDates.length === 0) {
+    return { summaries: [], latestDate, sparklines: {} };
+  }
+
+  const sparkDateSet = new Set(sparkDates);
+  const sparkDateIndex = new Map(sparkDates.map((date, index) => [date, index]));
+
+  // Step 3: Fetch data in parallel using targeted queries
+  const [latestPricesResult, sparklineAvgResult] = await Promise.all([
+    // Latest raw prices (for min/max and province extremes) — ~714 rows
     supabase
       .from("prices")
       .select("commodity_id, province_id, price")
@@ -48,75 +74,93 @@ async function getHomepageData() {
       .eq("date", latestDate)
       .gt("price", 0),
 
-    // Week-ago raw prices (for percentage comparison) — ~714 rows
+    // National averages for the selected sparkline dates — ~126 rows
     supabase
-      .from("prices")
-      .select("commodity_id, province_id, price")
+      .from("national_averages")
+      .select("commodity_id, date, avg_price")
       .eq("market_type", "traditional")
-      .eq("date", weekAgoStr)
-      .gt("price", 0),
-
-    // Sparkline data via RPC (aggregated by commodity+date) — ~210 rows
-    supabase.rpc("get_sparkline_data", {
-      start_date: sparkStartStr,
-      end_date: latestDate,
-    }),
+      .in("date", sparkDates)
+      .gt("avg_price", 0),
   ]);
 
-  const todayPrices = todayResult.data || [];
-  const weekAgoPrices = weekAgoResult.data || [];
-  const sparklineRows = sparklineResult.data || [];
+  const latestPrices = latestPricesResult.data || [];
+  const sparklineRows = sparklineAvgResult.data || [];
 
-  if (todayPrices.length === 0) {
+  if (latestPrices.length === 0) {
     return { summaries: [], latestDate, sparklines: {} };
   }
 
-  // Step 4: Build sparkline data from aggregated RPC results
-  const sparklines: Record<number, TrendPoint[]> = {};
+  // Step 4: Group data by commodity
+  const latestByCommodity = new Map<number, { price: number; province_id: string }[]>();
+  for (const row of latestPrices) {
+    const commodityId = Number(row.commodity_id);
+    const entry = {
+      price: Number(row.price),
+      province_id: row.province_id,
+    };
+
+    if (!latestByCommodity.has(commodityId)) {
+      latestByCommodity.set(commodityId, [entry]);
+    } else {
+      latestByCommodity.get(commodityId)!.push(entry);
+    }
+  }
+
+  const averagesByCommodity = new Map<number, { date: string; avg_price: number }[]>();
   for (const row of sparklineRows) {
-    const cid = row.commodity_id;
-    if (!sparklines[cid]) sparklines[cid] = [];
-    sparklines[cid].push({
+    if (!sparkDateSet.has(row.date)) continue;
+
+    const commodityId = Number(row.commodity_id);
+    const entry = {
       date: row.date,
-      price: Number(row.avg_price),
-    });
+      avg_price: Number(row.avg_price),
+    };
+
+    if (!averagesByCommodity.has(commodityId)) {
+      averagesByCommodity.set(commodityId, [entry]);
+    } else {
+      averagesByCommodity.get(commodityId)!.push(entry);
+    }
   }
 
-  // Sort sparklines chronologically
-  for (const cid in sparklines) {
-    sparklines[cid].sort((a, b) => a.date.localeCompare(b.date));
-  }
-
-  // Step 5: Build summaries with PIHPS-matching weekly percentage comparison
-  const roundTo50 = (num: number) => Math.round(num / 50) * 50;
+  // Step 5: Build summaries and BI-like sparkline/percentage change
+  const sparklines: Record<number, TrendPoint[]> = {};
   const summaries: CommoditySummary[] = [];
 
   for (const commodity of commodities) {
-    const todayCom = todayPrices.filter((p) => p.commodity_id === commodity.id);
-    if (todayCom.length === 0) continue;
+    const latestCommodityRows = latestByCommodity.get(commodity.id) || [];
+    if (latestCommodityRows.length === 0) continue;
 
-    const prices = todayCom.map((p) => Number(p.price));
-    const rawAvgPrice = prices.reduce((a, b) => a + b, 0) / prices.length;
-    const avgPrice = roundTo50(rawAvgPrice);
-    const minPrice = Math.min(...prices);
-    const maxPrice = Math.max(...prices);
+    const sparkRows = (averagesByCommodity.get(commodity.id) || [])
+      .sort((a, b) => (sparkDateIndex.get(a.date)! - sparkDateIndex.get(b.date)!))
+      .map((row) => ({
+        date: row.date,
+        price: roundTo50(row.avg_price),
+      }));
 
-    // Compare vs exactly 7 days ago (matching PIHPS/BI weekly comparison)
-    let prevAvgPrice: number | null = null;
-    const weekAgoCom = weekAgoPrices.filter((p) => p.commodity_id === commodity.id);
-    if (weekAgoCom.length > 0) {
-      const rawPrevAvg = weekAgoCom.reduce((a, b) => a + Number(b.price), 0) / weekAgoCom.length;
-      prevAvgPrice = roundTo50(rawPrevAvg);
-    }
+    sparklines[commodity.id] = sparkRows;
 
-    const priceChange = prevAvgPrice ? avgPrice - prevAvgPrice : 0;
-    const priceChangePct = prevAvgPrice ? ((avgPrice - prevAvgPrice) / prevAvgPrice) * 100 : 0;
+    const baselinePrice = sparkRows[0]?.price ?? null;
+    const latestSparkPrice = sparkRows[sparkRows.length - 1]?.price ?? null;
+    const avgPrice = latestSparkPrice ?? roundTo50(
+      latestCommodityRows.reduce((sum, row) => sum + row.price, 0) / latestCommodityRows.length
+    );
 
-    const sorted = [...todayCom].sort((a, b) => Number(a.price) - Number(b.price));
+    const priceChange = baselinePrice !== null ? avgPrice - baselinePrice : 0;
+    const priceChangePct = baselinePrice && baselinePrice > 0
+      ? ((avgPrice - baselinePrice) / baselinePrice) * 100
+      : 0;
+
+    const latestPricesForCommodity = latestCommodityRows.map((row) => row.price);
+    const minPrice = Math.min(...latestPricesForCommodity);
+    const maxPrice = Math.max(...latestPricesForCommodity);
+
+    const sorted = [...latestCommodityRows].sort((a, b) => a.price - b.price);
+
     summaries.push({
       commodity: commodity as Commodity,
       avgPrice,
-      prevAvgPrice,
+      prevAvgPrice: baselinePrice,
       priceChange,
       priceChangePct,
       minPrice,
