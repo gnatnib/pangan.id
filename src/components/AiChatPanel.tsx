@@ -196,7 +196,7 @@ export function AiChatPanel({ latestDate }: AiChatPanelProps) {
         <button
           type="submit"
           disabled={isLoading || !input.trim()}
-          className={`inline-flex items-center justify-center rounded-2xl bg-warm-800 px-5 text-sm font-semibold text-white transition hover:bg-warm-700 disabled:cursor-not-allowed disabled:bg-warm-300 ${
+          className={`inline-flex cursor-pointer items-center justify-center rounded-2xl bg-warm-800 px-5 text-sm font-semibold text-white transition hover:bg-warm-700 disabled:cursor-not-allowed disabled:bg-warm-300 ${
             compact ? "h-10 self-end" : "h-11"
           }`}
         >
@@ -271,7 +271,7 @@ export function AiChatPanel({ latestDate }: AiChatPanelProps) {
                   setIsFloatingMinimized(false);
                   requestAnimationFrame(() => floatingInputRef.current?.focus());
                 }}
-                className="fixed inset-x-3 bottom-3 z-50 flex items-center justify-between rounded-2xl border border-warm-200 bg-white/96 px-4 py-3 text-left shadow-[0_18px_50px_rgba(0,0,0,0.16)] backdrop-blur sm:inset-x-auto sm:right-6 sm:w-[320px]"
+                className="fixed inset-x-3 bottom-3 z-50 flex cursor-pointer items-center justify-between rounded-2xl border border-warm-200 bg-white/96 px-4 py-3 text-left shadow-[0_18px_50px_rgba(0,0,0,0.16)] backdrop-blur sm:inset-x-auto sm:right-6 sm:w-[320px]"
               >
                 <div>
                   <p className="text-sm font-semibold text-warm-800">Chat Pangan AI</p>
@@ -302,7 +302,7 @@ export function AiChatPanel({ latestDate }: AiChatPanelProps) {
                     <button
                       type="button"
                       onClick={() => setIsFloatingMinimized(true)}
-                      className="inline-flex h-8 w-8 items-center justify-center rounded-full border border-warm-200 bg-white text-base font-semibold text-warm-500 transition hover:border-warm-300 hover:text-warm-700"
+                      className="inline-flex h-8 w-8 cursor-pointer items-center justify-center rounded-full border border-warm-200 bg-white text-base font-semibold text-warm-500 transition hover:border-warm-300 hover:text-warm-700"
                       aria-label="Minimize chat floating"
                     >
                       -
