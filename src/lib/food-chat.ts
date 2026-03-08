@@ -246,6 +246,18 @@ const QUERY_STOPWORDS = new Set([
   "bahan",
   "pangan",
   "komoditas",
+  "mana",
+  "paling",
+  "tinggi",
+  "tertinggi",
+  "rendah",
+  "terendah",
+  "naik",
+  "turun",
+  "hari",
+  "jogja",
+  "diy",
+  "yogya",
 ]);
 
 const GROUP_TOKENS = new Set([
@@ -1655,11 +1667,19 @@ async function generateFallbackReply(question: string): Promise<string> {
     return `Saya belum mengenali lokasi \"${capitalizeWords(locationQuery)}\" di dataset wilayah saya. Coba gunakan nama provinsi, atau kota/kabupaten yang lebih umum dikenali.`;
   }
 
-  if (commodityAnalysis.unsupportedTokens.length > 0 && commodityCandidates.length === 0) {
+  const isGeneralRankingQuestion =
+    normalized.includes("termurah") ||
+    normalized.includes("termahal") ||
+    normalized.includes("paling murah") ||
+    normalized.includes("paling mahal") ||
+    (normalized.includes("naik") && normalized.includes("tinggi")) ||
+    ((normalized.includes("turun") || normalized.includes("penurunan")) && normalized.includes("tinggi"));
+
+  if (!isGeneralRankingQuestion && commodityAnalysis.unsupportedTokens.length > 0 && commodityCandidates.length === 0) {
     return buildUnsupportedCommodityReply(questionWithoutProvinceAliases, commodityAnalysis.unsupportedTokens, province);
   }
 
-  if (commodityAnalysis.unsupportedTokens.length > 0 && commodityCandidates.length > 0) {
+  if (!isGeneralRankingQuestion && commodityAnalysis.unsupportedTokens.length > 0 && commodityCandidates.length > 0) {
     return buildUnsupportedCommodityReply(questionWithoutProvinceAliases, commodityAnalysis.unsupportedTokens, province);
   }
 
