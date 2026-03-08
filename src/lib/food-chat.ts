@@ -105,15 +105,41 @@ const PROVINCE_ALIASES: Record<string, string> = {
   "jogja": "di yogyakarta",
   "yogya": "di yogyakarta",
   "semarang": "jawa tengah",
+  "jepara": "jawa tengah",
+  "sabang": "nanggroe aceh darussalam",
+  "subulussalam": "nanggroe aceh darussalam",
+  "pekalongan": "jawa tengah",
+  "tegal": "jawa tengah",
+  "purwokerto": "jawa tengah",
+  "magelang": "jawa tengah",
+  "salatiga": "jawa tengah",
+  "cilacap": "jawa tengah",
+  "kudus": "jawa tengah",
+  "pati": "jawa tengah",
   "solo": "jawa tengah",
   "surakarta": "jawa tengah",
   "bandung": "jawa barat",
+  "garut": "jawa barat",
+  "tasikmalaya": "jawa barat",
+  "sukabumi": "jawa barat",
+  "cianjur": "jawa barat",
   "bogor": "jawa barat",
   "bekasi": "jawa barat",
   "cirebon": "jawa barat",
   "surabaya": "jawa timur",
   "malang": "jawa timur",
   "kediri": "jawa timur",
+  "ngawi": "jawa timur",
+  "nganjuk": "jawa timur",
+  "madiun": "jawa timur",
+  "jember": "jawa timur",
+  "bojonegoro": "jawa timur",
+  "lamongan": "jawa timur",
+  "mojokerto": "jawa timur",
+  "sidoarjo": "jawa timur",
+  "pasuruan": "jawa timur",
+  "probolinggo": "jawa timur",
+  "blitar": "jawa timur",
   "jakarta": "dki jakarta",
   "tangerang": "banten",
   "serang": "banten",
@@ -166,12 +192,18 @@ const FOOD_SCOPE_KEYWORDS = [
   "historis",
   "riwayat",
   "cabai",
+  "cabe",
+  "ayam",
+  "sapi",
   "beras",
   "telur",
   "daging",
   "gula",
   "minyak",
   "bawang",
+  "rawit",
+  "merah",
+  "hijau",
 ];
 
 const OUT_OF_SCOPE_PATTERNS = [
@@ -214,6 +246,41 @@ const QUERY_STOPWORDS = new Set([
   "bahan",
   "pangan",
   "komoditas",
+]);
+
+const GROUP_TOKENS = new Set([
+  "cabai",
+  "cabe",
+  "rawit",
+  "merah",
+  "hijau",
+  "daging",
+  "ayam",
+  "sapi",
+  "telur",
+  "beras",
+  "gula",
+  "pasir",
+  "minyak",
+  "goreng",
+  "bawang",
+  "putih",
+  "lokal",
+  "premium",
+  "kualitas",
+  "curah",
+  "kemasan",
+  "bermerek",
+  "super",
+  "medium",
+  "bawah",
+  "segar",
+  "keriting",
+  "besar",
+  "1",
+  "2",
+  "i",
+  "ii",
 ]);
 
 const TOOL_DEFINITIONS: ToolDefinition[] = [
@@ -400,6 +467,7 @@ let referenceCache: (ReferenceData & { expiresAt: number }) | null = null;
 function normalizeText(value: string): string {
   return value
     .toLowerCase()
+    .replace(/\bcabe\b/g, "cabai")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, " ")
@@ -497,6 +565,31 @@ function extractMeaningfulTokens(question: string, province: ProvinceRef | null)
     .filter((token) => !provinceTokens.has(token));
 }
 
+function removeProvinceAliases(text: string): string {
+  let result = normalizeText(text);
+
+  for (const alias of Object.keys(PROVINCE_ALIASES)) {
+    const normalizedAlias = normalizeText(alias);
+    if (!normalizedAlias) continue;
+    const pattern = new RegExp(`\\b${normalizedAlias.replace(/[-/\\^$*+?.()|[\]{}]/g, "\\$&")}\\b`, "g");
+    result = result.replace(pattern, " ");
+  }
+
+  return result.replace(/\s+/g, " ").trim();
+}
+
+function extractLocationQuery(question: string): string | null {
+  const normalized = normalizeText(question);
+  const match = normalized.match(/\bdi\s+([a-z0-9 ]+)$/);
+  if (!match?.[1]) return null;
+
+  return match[1].trim();
+}
+
+function removeTrailingLocationPhrase(text: string): string {
+  return normalizeText(text).replace(/\bdi\s+[a-z0-9 ]+$/g, "").trim();
+}
+
 function getCommodityCandidates(
   question: string,
   commodities: CommodityRef[],
@@ -530,6 +623,36 @@ function getCommodityCandidates(
   return scored
     .filter((entry) => entry.matchedCount === bestScore)
     .map((entry) => entry.commodity);
+}
+
+function analyzeCommodityCandidates(
+  question: string,
+  commodities: CommodityRef[],
+  province: ProvinceRef | null
+) {
+  const tokens = extractMeaningfulTokens(question, province);
+  const candidates = getCommodityCandidates(question, commodities, province);
+  const matchedTokens = new Set<string>();
+
+  for (const candidate of candidates) {
+    const haystack = `${normalizeText(candidate.name)} ${normalizeText(candidate.slug.replace(/-/g, " "))}`;
+    for (const token of tokens) {
+      if (haystack.includes(token)) {
+        matchedTokens.add(token);
+      }
+    }
+  }
+
+  const unmatchedTokens = tokens.filter((token) => !matchedTokens.has(token));
+  const unsupportedTokens = unmatchedTokens.filter((token) => !GROUP_TOKENS.has(token));
+
+  return {
+    tokens,
+    candidates,
+    matchedTokens: Array.from(matchedTokens),
+    unmatchedTokens,
+    unsupportedTokens,
+  };
 }
 
 function getCommodityGroupLabel(
@@ -593,10 +716,24 @@ async function buildContextualQuestion(history: ClientChatMessage[]): Promise<st
   const normalizedPrevious = normalizeText(previous);
   const { commodities, provinces } = await getReferenceData();
   const currentProvince = findMentionedItem(provinces, current, PROVINCE_ALIASES);
-  const previousProvince = findMentionedItem(provinces, previous, PROVINCE_ALIASES);
+  const previousProvince =
+    findMentionedItem(provinces, previous, PROVINCE_ALIASES) ||
+    [...userMessages]
+      .slice(0, -1)
+      .reverse()
+      .map((message) => findMentionedItem(provinces, message.content, PROVINCE_ALIASES))
+      .find(Boolean) ||
+    null;
   const currentCommodityCandidates = getCommodityCandidates(current, commodities, currentProvince);
   const previousCommodityCandidates = getCommodityCandidates(previous, commodities, previousProvince);
   const previousCommodityGroupLabel = getCommodityGroupLabel(previous, previousCommodityCandidates, previousProvince);
+  const previousLooksLikePriceContext =
+    normalizedPrevious.includes("harga") ||
+    normalizedPrevious.includes("berapa") ||
+    normalizedPrevious.startsWith("kalau ") ||
+    normalizedPrevious.startsWith("kalo ") ||
+    normalizedPrevious.startsWith("yang ") ||
+    previousCommodityCandidates.length > 0;
 
   const shortFollowUp =
     normalizedCurrent.startsWith("kalau ") ||
@@ -627,8 +764,8 @@ async function buildContextualQuestion(history: ClientChatMessage[]): Promise<st
     merged = `${previousCommodityGroupLabel} ${merged}`.trim();
   }
 
-  if (!hasExplicitFoodIntent(normalizedCurrent) && (normalizedPrevious.includes("harga") || normalizedPrevious.includes("berapa"))) {
-    merged = `berapa harga ${merged}`;
+  if (!hasExplicitFoodIntent(normalizedCurrent) && (previousLooksLikePriceContext || currentCommodityCandidates.length > 0)) {
+    merged = merged.startsWith("berapa harga ") ? merged : `berapa harga ${merged}`;
   }
 
   if (normalizedCurrent.includes("nasional")) {
@@ -1098,6 +1235,25 @@ async function getLatestPricesForCommodityMatches(args: {
   };
 }
 
+function buildUnsupportedCommodityReply(rawQuestion: string, unsupportedTokens: string[], province: ProvinceRef | null): string {
+  const normalized = normalizeText(rawQuestion);
+  const unsupportedLabel = capitalizeWords(unsupportedTokens.join(" "));
+
+  if (normalized.includes("minyak")) {
+    return `Saya tidak menemukan komoditas ${unsupportedLabel.toLowerCase() || "tersebut"} di data Pangan.id. Untuk kategori minyak, yang tersedia hanya minyak goreng seperti Minyak Goreng Curah, Minyak Goreng Kemasan Bermerek 1, dan Minyak Goreng Kemasan Bermerek 2${province ? ` di ${province.name}` : ""}.`;
+  }
+
+  if (normalized.includes("daging")) {
+    return `Saya tidak menemukan komoditas ${unsupportedLabel.toLowerCase() || "tersebut"} di data Pangan.id. Untuk kategori daging, yang tersedia saat ini hanya Daging Ayam Ras Segar, Daging Sapi Kualitas 1, dan Daging Sapi Kualitas 2${province ? ` di ${province.name}` : ""}.`;
+  }
+
+  if (normalized.includes("mi") || normalized.includes("mie")) {
+    return "Pangan.id tidak melacak makanan olahan seperti mi ayam. Saya hanya bisa bantu untuk komoditas pangan yang ada di dataset, seperti beras, cabai, gula, minyak goreng, telur, daging ayam, dan daging sapi.";
+  }
+
+  return `Saya tidak menemukan komoditas ${unsupportedLabel.toLowerCase() || "tersebut"} di data Pangan.id. Coba tanya komoditas yang memang dilacak, seperti beras, cabai, gula, minyak goreng, telur, daging ayam, atau daging sapi.`;
+}
+
 async function getLatestPrice(args: Record<string, unknown>) {
   const commodityQuery = getString(args.commodity_query);
   if (!commodityQuery) {
@@ -1450,6 +1606,7 @@ function canUseDeterministicReply(question: string): boolean {
 
   return (
     isClearlyOutOfScopeQuestion(normalized) ||
+    FOOD_SCOPE_KEYWORDS.some((keyword) => normalized.includes(normalizeText(keyword))) ||
     normalized.includes("naik") ||
     normalized.includes("turun") ||
     (normalized.includes("naik") && normalized.includes("tinggi")) ||
@@ -1479,14 +1636,31 @@ async function generateFallbackReply(question: string): Promise<string> {
   const normalized = normalizeText(question);
   const { commodities, provinces } = await getReferenceData();
   const commodity = findMentionedItem(commodities, question);
-  const province = findMentionedItem(provinces, question, PROVINCE_ALIASES);
-  const commodityCandidates = getCommodityCandidates(question, commodities, province);
+  const locationQuery = extractLocationQuery(question);
+  const province =
+    findMentionedItem(provinces, question, PROVINCE_ALIASES) ||
+    (locationQuery ? await resolveProvince(locationQuery) : null);
+  const questionWithoutProvinceAliases = removeTrailingLocationPhrase(removeProvinceAliases(question));
+  const commodityAnalysis = analyzeCommodityCandidates(questionWithoutProvinceAliases, commodities, province);
+  const commodityCandidates = commodityAnalysis.candidates;
   const inferredCommodity = commodity || (commodityCandidates.length === 1 ? commodityCandidates[0] : null);
-  const commodityGroupLabel = getCommodityGroupLabel(question, commodityCandidates, province);
+  const commodityGroupLabel = getCommodityGroupLabel(questionWithoutProvinceAliases, commodityCandidates, province);
   const hasFoodSignals = hasFoodScopeSignals(normalized, inferredCommodity, province);
 
   if (isClearlyOutOfScopeQuestion(normalized) || !hasFoodSignals) {
     return "Maaf, saya hanya bisa membantu pertanyaan seputar harga pangan, komoditas, provinsi, dan tren data di Pangan.id.";
+  }
+
+  if (locationQuery && !province && (inferredCommodity || commodityCandidates.length > 0 || normalized.includes("harga"))) {
+    return `Saya belum mengenali lokasi \"${capitalizeWords(locationQuery)}\" di dataset wilayah saya. Coba gunakan nama provinsi, atau kota/kabupaten yang lebih umum dikenali.`;
+  }
+
+  if (commodityAnalysis.unsupportedTokens.length > 0 && commodityCandidates.length === 0) {
+    return buildUnsupportedCommodityReply(questionWithoutProvinceAliases, commodityAnalysis.unsupportedTokens, province);
+  }
+
+  if (commodityAnalysis.unsupportedTokens.length > 0 && commodityCandidates.length > 0) {
+    return buildUnsupportedCommodityReply(questionWithoutProvinceAliases, commodityAnalysis.unsupportedTokens, province);
   }
 
   if (normalized.includes("naik") && normalized.includes("tinggi")) {
