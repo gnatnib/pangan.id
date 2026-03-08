@@ -1,0 +1,11 @@
+
+> pangan.id@0.1.0 start
+> next start --port 3002
+
+▲ Next.js 16.1.6
+- Local:         http://localhost:3002
+- Network:       http://192.168.0.113:3002
+
+✓ Starting...
+✓ Ready in 1166ms
+^C^C

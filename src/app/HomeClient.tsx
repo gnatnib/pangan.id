@@ -7,9 +7,10 @@ import { PriceCard } from "@/components/PriceCard";
 import { SortControls } from "@/components/SortControls";
 import { IndonesiaMap } from "@/components/IndonesiaMap";
 import { DateRangePicker } from "@/components/DateRangePicker";
+import { AiChatPanel } from "@/components/AiChatPanel";
 import { supabase } from "@/lib/supabase";
 import type { CommoditySummary, TrendPoint, Province } from "@/lib/types";
-import { formatDateLong, formatRupiah, formatPrice, getDaysAgo, calcPctDiff } from "@/lib/utils";
+import { formatDateLong, formatRupiah, formatPrice, calcPctDiff } from "@/lib/utils";
 
 interface HomeClientProps {
   summaries: CommoditySummary[];
@@ -18,39 +19,25 @@ interface HomeClientProps {
 }
 
 
-interface SortControlsProps {
-  value: string;
-  onChange: (value: string) => void;
-}
+type MapPrice = {
+  province_id: string;
+  province_name: string;
+  price: number;
+};
 
 export function HomeClient({ summaries, latestDate, sparklines }: HomeClientProps) {
   const [sort, setSort] = useState("change-desc");
-  
-  const OPTIONS = [
-    { value: "change-desc", label: "Kenaikan Tertinggi" },
-    { value: "change-asc", label: "Penurunan Tertinggi" },
-    { value: "price-desc", label: "Harga Tertinggi" },
-    { value: "price-asc", label: "Harga Terendah" },
-    { value: "name-asc", label: "A — Z" },
-  ];
   // Map commodity selector
-  const [mapCommodityId, setMapCommodityId] = useState<number | null>(null);
+  const [mapCommodityId, setMapCommodityId] = useState<number | null>(summaries[0]?.commodity.id ?? null);
   // Date range for map & table only
   const [mapStart, setMapStart] = useState(latestDate);
   const [mapEnd, setMapEnd] = useState(latestDate);
   // Map data
-  const [mapPrices, setMapPrices] = useState<any[]>([]);
+  const [mapPrices, setMapPrices] = useState<MapPrice[]>([]);
   const [loadingMap, setLoadingMap] = useState(false);
   const [activeMapPreset, setActiveMapPreset] = useState<number | null>(1);
   // Provinces lookup
   const [provinces, setProvinces] = useState<Province[]>([]);
-
-  // Initialize map commodity to first commodity
-  useEffect(() => {
-    if (summaries.length > 0 && !mapCommodityId) {
-      setMapCommodityId(summaries[0].commodity.id);
-    }
-  }, [summaries, mapCommodityId]);
 
   // Fetch provinces
   useEffect(() => {
@@ -193,6 +180,8 @@ export function HomeClient({ summaries, latestDate, sparklines }: HomeClientProp
           </div>
         </motion.div>
       )}
+
+      <AiChatPanel latestDate={latestDate} />
 
       {/* Sort controls */}
       {hasData && (

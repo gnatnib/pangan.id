@@ -1,0 +1,11 @@
+
+> pangan.id@0.1.0 start
+> next start --port 3004
+
+▲ Next.js 16.1.6
+- Local:         http://localhost:3004
+- Network:       http://192.168.0.113:3004
+
+✓ Starting...
+✓ Ready in 924ms
+^C^C
