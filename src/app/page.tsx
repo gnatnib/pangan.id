@@ -2,7 +2,8 @@ import { supabase } from "@/lib/supabase";
 import type { Commodity, CommoditySummary, TrendPoint } from "@/lib/types";
 import { HomeClient } from "./HomeClient";
 
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 async function getHomepageData() {
   const roundTo50 = (num: number) => Math.round(num / 50) * 50;
