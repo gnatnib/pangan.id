@@ -86,8 +86,8 @@ export default function TentangPage() {
             bekerja sama dengan instansi terkait.
           </p>
           <p className="leading-relaxed mt-2">
-            Data di-update secara otomatis setiap hari pada pukul 17:00 dan
-            21:00 WIB. Terdapat lag 1 hari dari waktu pencatatan harga di
+            Data di-update secara otomatis setiap hari pada pukul 09:00 dan
+            17:00 WIB. Terdapat lag 1 hari dari waktu pencatatan harga di
             lapangan.
           </p>
         </motion.section>

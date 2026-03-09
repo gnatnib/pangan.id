@@ -53,7 +53,7 @@ Or check a specific commodity:
 | **🏙️** | Province Detail | All commodity prices per province with vs-national-average comparison |
 | **🌶️** | Commodity Detail | Price history, province ranking table, cheapest/most expensive highlights |
 | **💬** | Pai (Pangan AI) | Homepage chat assistant for natural-language questions like top movers, cheapest commodity in a province, or price follow-ups |
-| **🔄** | Auto-Update | GitHub Actions scraper runs at 17:00 and 21:00 WIB daily |
+| **🔄** | Auto-Update | GitHub Actions scraper runs at 09:00 and 17:00 WIB daily |
 | **💡** | Auto Insights | SQL-generated price alerts plus scoped AI chat with deterministic data fallback |
 | **📱** | Mobile-First | Designed for mobile, fast on low-end devices and slow connections |
 
@@ -63,7 +63,7 @@ All price data is sourced from **[Bank Indonesia PIHPS](https://www.bi.go.id/har
 
 - **Coverage**: 38 provinces, 21 strategic commodities
 - **Markets**: Traditional markets (pasar tradisional) and modern markets (supermarket/minimarket)
-- **Frequency**: Updated daily; scraped automatically at 17:00 and 21:00 WIB
+- **Frequency**: Updated daily; scraped automatically at 09:00 and 17:00 WIB
 - **Lag**: ~1 day from field recording to publication
 
 ## Commodities Tracked
@@ -90,7 +90,7 @@ All price data is sourced from **[Bank Indonesia PIHPS](https://www.bi.go.id/har
                                   ▼
                 ┌──────────────────────────────────────┐
                 │          GitHub Actions               │
-                │   Cron: 17:00 WIB + 21:00 WIB daily  │
+                │   Cron: 09:00 WIB + 17:00 WIB daily  │
                 │   Python scraper → upsert to DB       │
                 └─────────────────┬────────────────────┘
                                   │
@@ -200,7 +200,7 @@ Add these secrets to your repository (`Settings → Secrets → Actions`):
 | `SUPABASE_URL` | Your Supabase project URL |
 | `SUPABASE_SERVICE_KEY` | Supabase service role key (write access) |
 
-The scraper will then run automatically every day at **17:00 and 21:00 WIB**.
+The scraper will then run automatically every day at **09:00 and 17:00 WIB**.
 
 ## Project Structure
 

@@ -2,10 +2,10 @@ name: Daily Food Price Scraper
 
 on:
   schedule:
-    # Run at 10:00 UTC (17:00 WIB) — after BI data is typically updated
+    # Run at 02:00 UTC (09:00 WIB) — catch the usual morning PIHPS update
+    - cron: "0 2 * * *"
+    # Run again at 10:00 UTC (17:00 WIB) — catch later same-day updates
     - cron: "0 10 * * *"
-    # Run again at 14:00 UTC (21:00 WIB) — catch late updates
-    - cron: "0 14 * * *"
 
   # Allow manual trigger
   workflow_dispatch:
