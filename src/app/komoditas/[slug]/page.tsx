@@ -1,9 +1,11 @@
 import { supabase } from "@/lib/supabase";
+import { fetchPihpsCommodityTable, getDateDaysAgo } from "@/lib/pihps";
 import { notFound } from "next/navigation";
 import type { Metadata } from "next";
 import { CommodityDetailClient } from "./CommodityDetailClient";
 
-export const revalidate = 3600;
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
 
 interface PageProps {
   params: Promise<{ slug: string }>;
@@ -27,88 +29,81 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 export default async function CommodityDetailPage({ params }: PageProps) {
   const { slug } = await params;
 
-  const { data: commodity } = await supabase
-    .from("commodities")
-    .select("*")
-    .eq("slug", slug)
-    .single();
+  const normalizeProvinceName = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/aceh/g, "nanggroe aceh darussalam")
+      .replace(/kep\./g, "kepulauan")
+      .replace(/kep bangka belitung/g, "kepulauan bangka belitung")
+      .replace(/di yogyakarta/g, "di yogyakarta")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+
+  const [{ data: commodity }, { data: provinces }] = await Promise.all([
+    supabase
+      .from("commodities")
+      .select("*")
+      .eq("slug", slug)
+      .single(),
+    supabase
+      .from("provinces")
+      .select("id, name, slug"),
+  ]);
 
   if (!commodity) notFound();
 
-  // Get latest date from actual data
-  const { data: latestRow } = await supabase
-    .from("prices")
-    .select("date")
-    .eq("commodity_id", commodity.id)
-    .eq("market_type", "traditional")
-    .order("date", { ascending: false })
-    .limit(1);
+  const today = new Date().toISOString().split("T")[0];
+  const sourceStartDate = getDateDaysAgo(today, 30);
+  const sourceTable = await fetchPihpsCommodityTable(commodity.slug, sourceStartDate, today, "traditional");
 
-  const latestDate = latestRow?.[0]?.date || new Date().toISOString().split("T")[0];
+  const latestDate = sourceTable.dates[sourceTable.dates.length - 1] || today;
+  const latestDateSet = new Set(sourceTable.dates);
+  const latestNationalAvg = sourceTable.nationalRow?.values[latestDate] || 0;
+  const nationalAvg = Math.round(latestNationalAvg / 50) * 50;
+  const trend = sourceTable.dates
+    .filter((date) => sourceTable.nationalRow?.values[date])
+    .map((date) => ({
+      date,
+      price: Number(sourceTable.nationalRow?.values[date] || 0),
+    }));
 
-  // 30 days ago
-  const thirtyDaysAgo = new Date(latestDate + "T00:00:00");
-  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-  const thirtyDaysAgoStr = thirtyDaysAgo.toISOString().split("T")[0];
+  const provinceMetaByName = new Map(
+    (provinces || []).map((province) => [normalizeProvinceName(province.name), province])
+  );
 
-  // 5 days ago for multi-day table
-  const fiveDaysAgo = new Date(latestDate + "T00:00:00");
-  fiveDaysAgo.setDate(fiveDaysAgo.getDate() - 4); // latest + 4 previous = 5 days
-  const fiveDaysAgoStr = fiveDaysAgo.toISOString().split("T")[0];
+  const todayPrices = sourceTable.provinceRows
+    .map((row) => {
+      const provinceMeta = provinceMetaByName.get(normalizeProvinceName(row.name));
+      const price = row.values[latestDate];
 
-  // Parallel queries
-  const [
-    { data: todayPrices },
-    { data: trendData },
-    { data: multiDayRaw },
-  ] = await Promise.all([
-    // Today's prices per province
-    supabase
-      .from("prices")
-      .select("*, provinces(id, name, slug)")
-      .eq("commodity_id", commodity.id)
-      .eq("date", latestDate)
-      .eq("market_type", "traditional")
-      .gt("price", 0)
-      .order("price", { ascending: true }),
-    // 30-day trend (national average)
-    supabase
-      .from("national_averages")
-      .select("date, avg_price")
-      .eq("commodity_id", commodity.id)
-      .eq("market_type", "traditional")
-      .gte("date", thirtyDaysAgoStr)
-      .order("date", { ascending: true }),
-    // 5-day prices for all provinces (for the multi-day table)
-    supabase
-      .from("prices")
-      .select("date, price, province_id, provinces(id, name, slug)")
-      .eq("commodity_id", commodity.id)
-      .eq("market_type", "traditional")
-      .gte("date", fiveDaysAgoStr)
-      .lte("date", latestDate)
-      .gt("price", 0)
-      .order("date", { ascending: true }),
-  ]);
+      if (!price) return null;
 
-  // National average
-  const prices = (todayPrices || []).map((p) => p.price);
-  const rawNationalAvg = prices.length > 0
-    ? prices.reduce((a: number, b: number) => a + b, 0) / prices.length
-    : 0;
-  const nationalAvg = Math.round(rawNationalAvg / 50) * 50;
+      return {
+        province_id: provinceMeta?.id || row.name,
+        price,
+        provinces: provinceMeta
+          ? { id: provinceMeta.id, name: provinceMeta.name, slug: provinceMeta.slug }
+          : { id: row.name, name: row.name, slug: "" },
+      };
+    })
+    .filter((row): row is NonNullable<typeof row> => row !== null)
+    .sort((a, b) => a.price - b.price);
 
-  const trend = (trendData || []).map((t) => ({
-    date: t.date,
-    price: Number(t.avg_price),
-  }));
+  const multiDayDates = sourceTable.dates.slice(-5);
+  const multiDayRaw = sourceTable.provinceRows.flatMap((row) => {
+    const provinceMeta = provinceMetaByName.get(normalizeProvinceName(row.name));
 
-  // Extract unique dates for multi-day table header
-  const multiDayDatesSet = new Set<string>();
-  for (const p of multiDayRaw || []) {
-    multiDayDatesSet.add(p.date);
-  }
-  const multiDayDates = Array.from(multiDayDatesSet).sort();
+    return multiDayDates
+      .filter((date) => latestDateSet.has(date) && row.values[date])
+      .map((date) => ({
+        date,
+        price: row.values[date],
+        province_id: provinceMeta?.id || row.name,
+        provinces: provinceMeta
+          ? { id: provinceMeta.id, name: provinceMeta.name, slug: provinceMeta.slug }
+          : { id: row.name, name: row.name, slug: "" },
+      }));
+  });
 
   return (
     <CommodityDetailClient

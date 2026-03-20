@@ -1,12 +1,11 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import { motion } from "framer-motion";
 import Link from "next/link";
 import { PriceChart } from "@/components/PriceChart";
 import { IndonesiaMap } from "@/components/IndonesiaMap";
 import { DateRangePicker } from "@/components/DateRangePicker";
-import { supabase } from "@/lib/supabase";
 import {
   formatRupiah,
   formatPrice,
@@ -50,42 +49,17 @@ export function CommodityDetailClient({
   const [startDate, setStartDate] = useState(dataStart);
   const [endDate, setEndDate] = useState(dataEnd);
   const [activePreset, setActivePreset] = useState<number | null>(7);
-  const [historicalPrices, setHistoricalPrices] = useState<any[]>([]);
-  const [loadingHistory, setLoadingHistory] = useState(false);
-
-  useEffect(() => {
-    const fetchHistory = async () => {
-      setLoadingHistory(true);
-      const { data } = await supabase
-        .from("prices")
-        .select("date, price, province_id")
-        .eq("commodity_id", commodity.id)
-        .eq("market_type", "traditional")
-        .gte("date", startDate)
-        .lte("date", endDate)
-        .gt("price", 0)
-        .order("date", { ascending: true });
-      setHistoricalPrices(data || []);
-      setLoadingHistory(false);
-    };
-    fetchHistory();
-  }, [commodity.id, startDate, endDate]);
 
   const roundTo50 = (num: number) => Math.round(num / 50) * 50;
 
   const dailyAvgs = useMemo(() => {
-    const byDate = new Map<string, number[]>();
-    for (const p of historicalPrices) {
-      if (!byDate.has(p.date)) byDate.set(p.date, []);
-      byDate.get(p.date)!.push(p.price);
-    }
-    return Array.from(byDate.entries())
-      .map(([date, prices]) => ({
-        date,
-        price: roundTo50(prices.reduce((a, b) => a + b, 0) / prices.length),
-      }))
-      .sort((a, b) => a.date.localeCompare(b.date));
-  }, [historicalPrices]);
+    return trend
+      .filter((point) => point.date >= startDate && point.date <= endDate)
+      .map((point) => ({
+        date: point.date,
+        price: roundTo50(point.price),
+      }));
+  }, [trend, startDate, endDate]);
 
   const periodChange = useMemo(() => {
     if (dailyAvgs.length < 2) return null;
@@ -132,9 +106,6 @@ export function CommodityDetailClient({
   const tableData = useMemo(() => {
     const byProvince = new Map<string, { name: string; slug: string; prices: Map<string, number> }>();
 
-    // National average row
-    const natAvgPrices = new Map<string, number[]>();
-
     for (const p of multiDayPrices) {
       const provName = p.provinces?.name || "Unknown";
       const provSlug = p.provinces?.slug || "";
@@ -144,15 +115,11 @@ export function CommodityDetailClient({
         byProvince.set(provId, { name: provName, slug: provSlug, prices: new Map() });
       }
       byProvince.get(provId)!.prices.set(p.date, p.price);
-
-      // For national avg
-      if (!natAvgPrices.has(p.date)) natAvgPrices.set(p.date, []);
-      natAvgPrices.get(p.date)!.push(p.price);
     }
 
     const natAvg: Record<string, number> = {};
-    for (const [date, prices] of natAvgPrices.entries()) {
-      natAvg[date] = roundTo50(prices.reduce((a, b) => a + b, 0) / prices.length);
+    for (const point of trend) {
+      natAvg[point.date] = roundTo50(point.price);
     }
 
     const rows = Array.from(byProvince.entries()).map(([id, data]) => ({
@@ -163,7 +130,7 @@ export function CommodityDetailClient({
     })).sort((a, b) => a.name.localeCompare(b.name));
 
     return { rows, natAvg };
-  }, [multiDayPrices]);
+  }, [multiDayPrices, trend]);
 
   const formatShortDate = (d: string) => {
     const date = new Date(d + "T00:00:00");
@@ -254,11 +221,7 @@ export function CommodityDetailClient({
             activePreset={activePreset}
           />
         </div>
-        {loadingHistory ? (
-          <div className="flex items-center justify-center h-48 sm:h-64 text-warm-400 text-sm">Memuat data historis...</div>
-        ) : (
-          <PriceChart data={dailyAvgs} height={280} />
-        )}
+        <PriceChart data={dailyAvgs} height={280} />
       </motion.div>
 
       {/* Province Price Table */}

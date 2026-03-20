@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { formatPrice, formatPct, formatChange, getPriceChangeColor } from "@/lib/utils";
@@ -16,6 +17,7 @@ export function PriceCard({ summary, index = 0, sparkData }: PriceCardProps) {
   const { commodity, avgPrice, priceChange, priceChangePct } = summary;
   const isUp = priceChange > 0;
   const isDown = priceChange < 0;
+  const [isNavigating, setIsNavigating] = useState(false);
 
   const sparkColor = isUp ? "#dc2626" : isDown ? "#029746" : "#a3a39e";
 
@@ -27,8 +29,23 @@ export function PriceCard({ summary, index = 0, sparkData }: PriceCardProps) {
       className="h-full relative hover:z-50"
       style={{ overflow: 'visible' }}
     >
-      <Link href={`/komoditas/${commodity.slug}`} className="block h-full overflow-visible">
+      <Link
+        href={`/komoditas/${commodity.slug}`}
+        className="block h-full overflow-visible"
+        onClick={() => setIsNavigating(true)}
+      >
         <div className="card p-3 sm:p-4 hover:-translate-y-0.5 cursor-pointer group overflow-visible flex flex-col h-full relative">
+          {isNavigating && (
+            <div className="absolute inset-0 z-10 rounded-2xl bg-white/75 backdrop-blur-[1px]">
+              <div className="absolute left-3 right-3 top-0 h-1 overflow-hidden rounded-full bg-warm-100">
+                <div className="h-full w-1/3 animate-pulse rounded-full bg-brand-orange" />
+              </div>
+              <div className="absolute bottom-3 right-3 rounded-full bg-warm-800 px-2.5 py-1 text-[10px] font-medium text-white shadow-sm">
+                Membuka...
+              </div>
+            </div>
+          )}
+
           <div className="flex items-start justify-between mb-2 shrink-0">
             <div className="flex items-center gap-1.5 min-w-0">
               <span className="text-base sm:text-lg shrink-0">{commodity.icon}</span>

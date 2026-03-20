@@ -27,6 +27,16 @@ type MapPrice = {
 
 export function HomeClient({ summaries, latestDate, sparklines }: HomeClientProps) {
   const [sort, setSort] = useState("change-desc");
+  const normalizeProvinceName = (value: string) =>
+    value
+      .toLowerCase()
+      .replace(/aceh/g, "nanggroe aceh darussalam")
+      .replace(/kep\./g, "kepulauan")
+      .replace(/kep bangka belitung/g, "kepulauan bangka belitung")
+      .replace(/di yogyakarta/g, "di yogyakarta")
+      .replace(/[^a-z0-9]+/g, " ")
+      .trim();
+
   // Map commodity selector
   const [mapCommodityId, setMapCommodityId] = useState<number | null>(summaries[0]?.commodity.id ?? null);
   // Date range for map & table only
@@ -53,34 +63,47 @@ export function HomeClient({ summaries, latestDate, sparklines }: HomeClientProp
     if (!mapCommodityId) return;
     const fetchMapData = async () => {
       setLoadingMap(true);
-      // Get avg price per province for the date range
-      const { data } = await supabase
-        .from("prices")
-        .select("province_id, price, date")
-        .eq("commodity_id", mapCommodityId)
-        .eq("market_type", "traditional")
-        .gte("date", mapStart)
-        .lte("date", mapEnd)
-        .gt("price", 0);
-
-      if (data) {
-        // Group by province, take average over the date range
-        const byProv = new Map<string, number[]>();
-        for (const p of data) {
-          if (!byProv.has(p.province_id)) byProv.set(p.province_id, []);
-          byProv.get(p.province_id)!.push(p.price);
-        }
-        const results = Array.from(byProv.entries()).map(([provId, prices]) => ({
-          province_id: provId,
-          province_name: provinces.find((p) => p.id === provId)?.name || provId,
-          price: Math.round(prices.reduce((a, b) => a + b, 0) / prices.length),
-        })).sort((a, b) => a.price - b.price);
-        setMapPrices(results);
+      const commodity = summaries.find((summary) => summary.commodity.id === mapCommodityId)?.commodity;
+      if (!commodity) {
+        setMapPrices([]);
+        setLoadingMap(false);
+        return;
       }
-      setLoadingMap(false);
+
+      try {
+        const response = await fetch(
+          `/api/pihps/commodity-table?slug=${commodity.slug}&startDate=${mapStart}&endDate=${mapEnd}`,
+          { cache: "no-store" }
+        );
+
+        const payload = (await response.json()) as {
+          rows?: Array<{ provinceName: string; averagePrice: number }>;
+        };
+
+        if (!response.ok) {
+          setMapPrices([]);
+          return;
+        }
+
+        const results = (payload.rows || []).map((row) => {
+          const province = provinces.find(
+            (item) => normalizeProvinceName(item.name) === normalizeProvinceName(row.provinceName)
+          );
+
+          return {
+            province_id: province?.id || row.provinceName,
+            province_name: province?.name || row.provinceName,
+            price: row.averagePrice,
+          };
+        });
+
+        setMapPrices(results);
+      } finally {
+        setLoadingMap(false);
+      }
     };
     fetchMapData();
-  }, [mapCommodityId, mapStart, mapEnd, provinces]);
+  }, [mapCommodityId, mapStart, mapEnd, provinces, summaries]);
 
   const sorted = useMemo(() => {
     const arr = [...summaries];
@@ -107,9 +130,7 @@ export function HomeClient({ summaries, latestDate, sparklines }: HomeClientProp
   const hasData = summaries.length > 0;
 
   const selectedCommodity = summaries.find((s) => s.commodity.id === mapCommodityId);
-  const mapAvg = mapPrices.length > 0
-    ? mapPrices.reduce((a, b) => a + b.price, 0) / mapPrices.length
-    : 0;
+  const mapAvg = selectedCommodity?.avgPrice || 0;
 
   const handleMapPreset = (days: number) => {
     setActiveMapPreset(days);
