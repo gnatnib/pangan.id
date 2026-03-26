@@ -26,9 +26,9 @@ export function AiChatPanel({ latestDate }: AiChatPanelProps) {
     {
       role: "assistant",
       content:
-        `Halo, saya Pai - Pangan AI. Saya bantu cari dan jelaskan data harga pangan di Pangan.id. ` +
-        `Data terbaru yang tersedia saat ini ${formatDateLong(latestDate)}. ` +
-        `Kamu bisa tanya harga komoditas, perbandingan antar provinsi, tren kenaikan/penurunan, atau follow-up singkat seperti "yang premium?" dan "kalau nasional?".`,
+        `Halo! 👋 Saya Pai, asisten harga pangan kamu. ` +
+        `Tanya apa aja soal harga beras, cabai, telur, daging, minyak goreng, dan lainnya — ` +
+        `mau cek harga terbaru, tren naik/turun, atau bandingin antar provinsi, saya siap bantu! 😊`,
     },
   ]);
   const [input, setInput] = useState("");

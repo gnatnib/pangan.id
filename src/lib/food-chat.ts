@@ -1,4 +1,5 @@
 import { serverSupabase } from "@/lib/server-supabase";
+import { fetchPihpsCommodityTable, getDateDaysAgo } from "@/lib/pihps";
 
 type ClientChatMessage = {
   role: "user" | "assistant";
@@ -92,12 +93,16 @@ const DEFAULT_MODEL = process.env.OLLAMA_MODEL || process.env.AI_MODEL || "qwen3
 const DEFAULT_OPENAI_BASE_URL = (process.env.AI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
 const DEFAULT_OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || "https://ollama.com").replace(/\/$/, "");
 const SYSTEM_PROMPT = [
-  "Kamu adalah Pangan.id AI, asisten analisis harga pangan Indonesia.",
-  "Jawab hanya dalam scope harga bahan pangan, komoditas, provinsi, tren, perbandingan, dan data yang berasal dari Pangan.id / Bank Indonesia PIHPS.",
-  "Selalu gunakan tool saat menyebut angka, peringkat, harga, tanggal, kenaikan, atau penurunan.",
-  "Jika pertanyaan di luar scope pangan atau butuh data yang tidak tersedia, tolak dengan sopan dan arahkan kembali ke topik harga pangan.",
-  "Jawab dalam Bahasa Indonesia yang ringkas, jelas, dan praktis.",
+  "Kamu adalah Pai, asisten virtual Pangan.id yang ramah, cerdas, dan santai.",
+  "Kamu ahli dalam data harga pangan Indonesia dari Bank Indonesia PIHPS.",
+  "Jawab dengan gaya percakapan yang natural — santai tapi tetap informatif dan akurat.",
+  "Boleh pakai emoji sesekali (🌶️📈📉🍚) untuk membuat jawaban lebih hidup, tapi jangan berlebihan.",
+  "Gunakan tool untuk mengambil data harga, tren, perbandingan — jangan mengarang angka.",
+  "Jika user bertanya sesuatu yang di luar topik pangan, jawab singkat dengan ramah lalu tawarkan bantuan soal harga pangan.",
+  "Jika user menyapa atau ngobrol ringan, balas dengan hangat lalu tawarkan bantuan.",
+  "Jawab dalam Bahasa Indonesia. Boleh pakai bahasa gaul/informal kalau user juga pakai bahasa informal.",
   "Jika ada gap tanggal karena akhir pekan atau hari tanpa update, jelaskan secara singkat bila relevan.",
+  "Jangan terlalu panjang — jawaban 2-4 kalimat biasanya cukup, kecuali user minta detail.",
 ].join(" ");
 
 const PROVINCE_ALIASES: Record<string, string> = {
@@ -169,6 +174,38 @@ const PROVINCE_ALIASES: Record<string, string> = {
   "ternate": "maluku utara",
   "jayapura": "papua",
   "sorong": "papua barat daya",
+};
+
+// Informal/slang commodity aliases → formal partial match strings
+const COMMODITY_ALIASES: Record<string, string> = {
+  "cabe ijo": "cabai rawit hijau",
+  "cabai ijo": "cabai rawit hijau",
+  "cabe hijau": "cabai rawit hijau",
+  "rawit ijo": "cabai rawit hijau",
+  "rawit hijau": "cabai rawit hijau",
+  "cabe merah": "cabai merah",
+  "cabe keriting": "cabai merah keriting",
+  "cabe besar": "cabai merah besar",
+  "cabe rawit": "cabai rawit",
+  "cabe rawit merah": "cabai rawit merah",
+  "migor": "minyak goreng curah",
+  "migos": "minyak goreng curah",
+  "minyak goreng": "minyak goreng",
+  "telor": "telur ayam ras segar",
+  "telor ayam": "telur ayam ras segar",
+  "bamer": "bawang merah ukuran sedang",
+  "baput": "bawang putih ukuran sedang",
+  "bawang merah": "bawang merah ukuran sedang",
+  "bawang putih": "bawang putih ukuran sedang",
+  "daging ayam": "daging ayam ras segar",
+  "ayam potong": "daging ayam ras segar",
+  "daging sapi": "daging sapi kualitas 1",
+  "gula": "gula pasir",
+  "gulpas": "gula pasir",
+  "beras": "beras",
+  "beras murah": "beras kualitas bawah",
+  "beras bagus": "beras kualitas super",
+  "beras mahal": "beras kualitas super",
 };
 
 const FOOD_SCOPE_KEYWORDS = [
@@ -266,16 +303,23 @@ const GROUP_TOKENS = new Set([
   "rawit",
   "merah",
   "hijau",
+  "ijo",
   "daging",
   "ayam",
   "sapi",
   "telur",
+  "telor",
   "beras",
   "gula",
+  "gulpas",
   "pasir",
   "minyak",
   "goreng",
+  "migor",
+  "migos",
   "bawang",
+  "bamer",
+  "baput",
   "putih",
   "lokal",
   "premium",
@@ -289,6 +333,10 @@ const GROUP_TOKENS = new Set([
   "segar",
   "keriting",
   "besar",
+  "potong",
+  "murah",
+  "mahal",
+  "bagus",
   "1",
   "2",
   "i",
@@ -480,6 +528,8 @@ function normalizeText(value: string): string {
   return value
     .toLowerCase()
     .replace(/\bcabe\b/g, "cabai")
+    .replace(/\btelor\b/g, "telur")
+    .replace(/\bijo\b/g, "hijau")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .replace(/[^a-z0-9]+/g, " ")
@@ -609,6 +659,18 @@ function getCommodityCandidates(
 ): CommodityRef[] {
   const tokens = extractMeaningfulTokens(question, province);
   if (tokens.length === 0) return [];
+
+  // Check commodity aliases first — if the question matches an alias, resolve it
+  const normalizedQuestion = normalizeText(question);
+  const sortedAliases = Object.entries(COMMODITY_ALIASES).sort(
+    (a, b) => b[0].length - a[0].length
+  );
+  for (const [alias, canonical] of sortedAliases) {
+    if (normalizedQuestion.includes(normalizeText(alias))) {
+      const match = findBestMatch(commodities, canonical);
+      if (match) return [match];
+    }
+  }
 
   const scored = commodities
     .map((commodity) => {
@@ -890,6 +952,19 @@ async function resolveProvince(query: string): Promise<ProvinceRef | null> {
 
 async function resolveCommodity(query: string): Promise<CommodityRef | null> {
   const { commodities } = await getReferenceData();
+  const normalized = normalizeText(query);
+
+  // Check commodity aliases first (longest match wins)
+  const sortedAliases = Object.entries(COMMODITY_ALIASES).sort(
+    (a, b) => b[0].length - a[0].length
+  );
+  for (const [alias, canonical] of sortedAliases) {
+    if (normalized.includes(normalizeText(alias))) {
+      const match = findBestMatch(commodities, canonical);
+      if (match) return match;
+    }
+  }
+
   return findBestMatch(commodities, query);
 }
 
@@ -938,7 +1013,7 @@ async function getSiteOverview(args: Record<string, unknown>) {
   const commodityMap = new Map(commodities.map((item) => [item.id, item]));
   const sample = (averages || []).slice(0, 5).map((row) => ({
     commodity: commodityMap.get(Number(row.commodity_id))?.name || `Komoditas ${row.commodity_id}`,
-    avg_price: roundTo50(Number(row.avg_price)),
+    avg_price: Math.round(Number(row.avg_price)),
   }));
 
   return {
@@ -1001,9 +1076,9 @@ async function getTopMovers(args: Record<string, unknown>) {
           commodity: commodityMap.get(commodityId)?.name || `Komoditas ${commodityId}`,
           start_date: first.date,
           end_date: last.date,
-          start_price: roundTo50(first.price),
-          end_price: roundTo50(last.price),
-          change: roundTo50(priceChange),
+          start_price: Math.round(first.price),
+          end_price: Math.round(last.price),
+          change: Math.round(priceChange),
           change_pct: Number(priceChangePct.toFixed(2)),
           observed_points: rows.length,
         };
@@ -1052,8 +1127,8 @@ async function getTopMovers(args: Record<string, unknown>) {
     .map(([commodityId, rows]) => {
       const first = rows[0];
       const last = rows[rows.length - 1];
-      const startPrice = roundTo50(first.price);
-      const endPrice = roundTo50(last.price);
+      const startPrice = Math.round(first.price);
+      const endPrice = Math.round(last.price);
       const priceChange = endPrice - startPrice;
       const priceChangePct = startPrice > 0 ? (priceChange / startPrice) * 100 : 0;
 
@@ -1118,7 +1193,7 @@ async function getLatestPricesInProvince(args: Record<string, unknown>) {
     .map((row) => ({
       commodity: commodityMap.get(Number(row.commodity_id))?.name || `Komoditas ${row.commodity_id}`,
       unit: commodityMap.get(Number(row.commodity_id))?.unit || "Kg",
-      price: roundTo50(Number(row.price)),
+      price: Math.round(Number(row.price)),
     }))
     .sort((a, b) =>
       direction === "cheapest" ? a.price - b.price : b.price - a.price
@@ -1159,7 +1234,7 @@ async function getLatestNationalPrices(args: Record<string, unknown>) {
     .map((row) => ({
       commodity: commodityMap.get(Number(row.commodity_id))?.name || `Komoditas ${row.commodity_id}`,
       unit: commodityMap.get(Number(row.commodity_id))?.unit || "Kg",
-      price: roundTo50(Number(row.avg_price)),
+      price: Math.round(Number(row.avg_price)),
     }))
     .sort((a, b) =>
       direction === "cheapest" ? a.price - b.price : b.price - a.price
@@ -1214,7 +1289,7 @@ async function getLatestPricesForCommodityMatches(args: {
         .map((row) => ({
           commodity: commodityMap.get(Number(row.commodity_id))?.name || `Komoditas ${row.commodity_id}`,
           unit: commodityMap.get(Number(row.commodity_id))?.unit || "Kg",
-          price: roundTo50(Number(row.price)),
+          price: Math.round(Number(row.price)),
         }))
         .sort((a, b) => a.price - b.price),
     };
@@ -1241,7 +1316,7 @@ async function getLatestPricesForCommodityMatches(args: {
       .map((row) => ({
         commodity: commodityMap.get(Number(row.commodity_id))?.name || `Komoditas ${row.commodity_id}`,
         unit: commodityMap.get(Number(row.commodity_id))?.unit || "Kg",
-        price: roundTo50(Number(row.avg_price)),
+        price: Math.round(Number(row.avg_price)),
       }))
       .sort((a, b) => a.price - b.price),
   };
@@ -1252,18 +1327,18 @@ function buildUnsupportedCommodityReply(rawQuestion: string, unsupportedTokens: 
   const unsupportedLabel = capitalizeWords(unsupportedTokens.join(" "));
 
   if (normalized.includes("minyak")) {
-    return `Saya tidak menemukan komoditas ${unsupportedLabel.toLowerCase() || "tersebut"} di data Pangan.id. Untuk kategori minyak, yang tersedia hanya minyak goreng seperti Minyak Goreng Curah, Minyak Goreng Kemasan Bermerek 1, dan Minyak Goreng Kemasan Bermerek 2${province ? ` di ${province.name}` : ""}.`;
+    return `Hmm, ${unsupportedLabel.toLowerCase() || "itu"} belum ada di data saya 😅 Tapi untuk minyak goreng, saya punya data Minyak Goreng Curah, Kemasan Bermerek 1, dan Kemasan Bermerek 2${province ? ` di ${province.name}` : ""}. Mau cek yang mana?`;
   }
 
   if (normalized.includes("daging")) {
-    return `Saya tidak menemukan komoditas ${unsupportedLabel.toLowerCase() || "tersebut"} di data Pangan.id. Untuk kategori daging, yang tersedia saat ini hanya Daging Ayam Ras Segar, Daging Sapi Kualitas 1, dan Daging Sapi Kualitas 2${province ? ` di ${province.name}` : ""}.`;
+    return `${unsupportedLabel || "Komoditas itu"} belum ada di data saya. Untuk daging, yang bisa saya bantu: Daging Ayam Ras Segar, Daging Sapi Kualitas 1, dan Daging Sapi Kualitas 2${province ? ` di ${province.name}` : ""}. Mau tanya yang mana? 🥩`;
   }
 
   if (normalized.includes("mi") || normalized.includes("mie")) {
-    return "Pangan.id tidak melacak makanan olahan seperti mi ayam. Saya hanya bisa bantu untuk komoditas pangan yang ada di dataset, seperti beras, cabai, gula, minyak goreng, telur, daging ayam, dan daging sapi.";
+    return "Waduh, makanan olahan kayak mi belum saya lacak nih 😅 Saya fokusnya di bahan pangan dasar — beras, cabai, gula, minyak goreng, telur, daging. Ada yang mau ditanyain dari situ?";
   }
 
-  return `Saya tidak menemukan komoditas ${unsupportedLabel.toLowerCase() || "tersebut"} di data Pangan.id. Coba tanya komoditas yang memang dilacak, seperti beras, cabai, gula, minyak goreng, telur, daging ayam, atau daging sapi.`;
+  return `Hmm, ${unsupportedLabel.toLowerCase() || "komoditas itu"} kayaknya belum ada di data saya. Coba tanya yang lain — misalnya beras, cabai, gula, minyak goreng, telur, daging ayam, atau daging sapi? 😊`;
 }
 
 async function getLatestPrice(args: Record<string, unknown>) {
@@ -1315,10 +1390,37 @@ async function getLatestPrice(args: Record<string, unknown>) {
       unit: commodity.unit,
       market_type: marketType,
       latest_date: latestDate,
-      price: roundTo50(Number(data[0].price)),
+      price: Math.round(Number(data[0].price)),
     };
   }
 
+  // Use PIHPS API for national prices (same source as the website) for accuracy
+  try {
+    const today = new Date().toISOString().split("T")[0];
+    const startDate = getDateDaysAgo(today, 7);
+    const pihpsMarketType = marketType === "modern" ? "modern" : "traditional";
+    const table = await fetchPihpsCommodityTable(commodity.slug, startDate, today, pihpsMarketType);
+    const nationalValues = table.nationalRow?.values || {};
+    const sortedDates = Object.keys(nationalValues).sort();
+    const pihpsLatestDate = sortedDates[sortedDates.length - 1];
+
+    if (pihpsLatestDate && nationalValues[pihpsLatestDate]) {
+      const roundTo50 = (n: number) => Math.round(n / 50) * 50;
+      return {
+        ok: true,
+        scope: "national",
+        commodity: commodity.name,
+        unit: commodity.unit,
+        market_type: marketType,
+        latest_date: pihpsLatestDate,
+        price: roundTo50(nationalValues[pihpsLatestDate]),
+      };
+    }
+  } catch {
+    // Fall back to DB if PIHPS API fails
+  }
+
+  // Fallback: use national_averages from DB
   const latestDate = await getLatestNationalDate(marketType);
   if (!latestDate) {
     return { ok: false, message: "Belum ada data nasional yang tersedia." };
@@ -1347,7 +1449,7 @@ async function getLatestPrice(args: Record<string, unknown>) {
     unit: commodity.unit,
     market_type: marketType,
     latest_date: latestDate,
-    price: roundTo50(Number(data[0].avg_price)),
+    price: Math.round(Number(data[0].avg_price)),
   };
 }
 
@@ -1390,7 +1492,7 @@ async function getCommodityHistory(args: Record<string, unknown>) {
 
     const points = (data || []).map((row) => ({
       date: row.date,
-      price: roundTo50(Number(row.price)),
+      price: Math.round(Number(row.price)),
     }));
 
     if (points.length === 0) {
@@ -1438,7 +1540,7 @@ async function getCommodityHistory(args: Record<string, unknown>) {
 
   const points = (data || []).map((row) => ({
     date: row.date,
-    price: roundTo50(Number(row.avg_price)),
+    price: Math.round(Number(row.avg_price)),
   }));
 
   if (points.length === 0) {
@@ -1497,7 +1599,7 @@ async function compareCommodityAcrossProvinces(args: Record<string, unknown>) {
   const results = (data || [])
     .map((row) => ({
       province: provinceMap.get(row.province_id)?.name || row.province_id,
-      price: roundTo50(Number(row.price)),
+      price: Math.round(Number(row.price)),
       unit: commodity.unit,
     }))
     .sort((a, b) =>
@@ -1616,31 +1718,30 @@ function hasFoodScopeSignals(normalized: string, commodity: CommodityRef | null,
 function canUseDeterministicReply(question: string): boolean {
   const normalized = normalizeText(question);
 
+  // Clearly out of scope -> deterministic rejection
+  if (isClearlyOutOfScopeQuestion(normalized)) return true;
+
+  // Greetings, small talk, vague questions -> let LLM handle naturally
+  const isGreeting = /^(halo|hai|hi|hey|helo|selamat|pagi|siang|sore|malam|apa kabar|yo|woi|bang|kak|min)\b/.test(normalized);
+  const isSmallTalk = /^(siapa kamu|kamu siapa|apa itu pangan|bisa apa|fitur|bantuan|help|terima kasih|makasih|thanks|ok|oke|good|bagus|mantap)\b/.test(normalized);
+  if (isGreeting || isSmallTalk) return false;
+
+  // Common food-related patterns -> fast deterministic reply
   return (
-    isClearlyOutOfScopeQuestion(normalized) ||
     FOOD_SCOPE_KEYWORDS.some((keyword) => normalized.includes(normalizeText(keyword))) ||
     normalized.includes("naik") ||
     normalized.includes("turun") ||
-    (normalized.includes("naik") && normalized.includes("tinggi")) ||
-    ((normalized.includes("turun") || normalized.includes("penurunan")) && normalized.includes("tinggi")) ||
-    normalized.includes("provinsi mana") ||
-    normalized.includes("provinsi apa") ||
     normalized.includes("termurah") ||
     normalized.includes("termahal") ||
     normalized.includes("murah") ||
     normalized.includes("mahal") ||
-    normalized.includes("paling murah") ||
-    normalized.includes("paling mahal") ||
     normalized.includes("harga") ||
-    normalized.includes("berapa harga") ||
-    normalized.includes("harga bahan pangan") ||
-    normalized.includes("komoditas apa") ||
-    normalized.includes("bahan pangan apa") ||
+    normalized.includes("berapa") ||
+    normalized.includes("provinsi mana") ||
     normalized.includes("riwayat") ||
     normalized.includes("historis") ||
-    normalized.includes("perubahan") ||
-    normalized.includes("trend") ||
-    normalized.includes("tren")
+    normalized.includes("tren") ||
+    normalized.includes("trend")
   );
 }
 
@@ -1660,7 +1761,7 @@ async function generateFallbackReply(question: string): Promise<string> {
   const hasFoodSignals = hasFoodScopeSignals(normalized, inferredCommodity, province);
 
   if (isClearlyOutOfScopeQuestion(normalized) || !hasFoodSignals) {
-    return "Maaf, saya hanya bisa membantu pertanyaan seputar harga pangan, komoditas, provinsi, dan tren data di Pangan.id.";
+    return "Hehe, itu di luar keahlian saya 😄 Tapi kalau soal harga pangan — beras, cabai, telur, minyak goreng, daging — saya siap bantu! Ada yang mau ditanyain?";
   }
 
   if (locationQuery && !province && (inferredCommodity || commodityCandidates.length > 0 || normalized.includes("harga"))) {
@@ -1690,13 +1791,13 @@ async function generateFallbackReply(question: string): Promise<string> {
       province_query: province?.name,
     });
 
-    if (!result.ok) return result.message || "Saya belum bisa mengambil data kenaikan komoditas.";
+    if (!result.ok) return result.message || "Waduh, datanya belum bisa diambil nih. Coba lagi ya!";
     const top = result.results?.[0];
     if (!top) {
-      return `Saya tidak menemukan komoditas yang naik pada periode tersebut${result.scope === "province" ? ` di ${result.province}` : ""}.`;
+      return `Nggak ada komoditas yang naik pada periode itu${result.scope === "province" ? ` di ${result.province}` : ""}.`;
     }
 
-    return `${result.scope === "province" ? `Di ${result.province}` : "Secara nasional"}, komoditas dengan kenaikan tertinggi ${result.requested_days} hari terakhir adalah ${top.commodity}. Harganya naik dari ${formatRupiah(top.start_price)} menjadi ${formatRupiah(top.end_price)} pada ${formatDateDisplay(top.end_date)} (${formatPercent(top.change_pct)} atau ${formatSignedRupiah(top.change)}).`;
+    return `${result.scope === "province" ? `Di ${result.province}` : "Secara nasional"}, yang naik paling tinggi ${result.requested_days} hari terakhir itu **${top.commodity}**. Dari ${formatRupiah(top.start_price)} jadi ${formatRupiah(top.end_price)} (${formatPercent(top.change_pct)}). Data per ${formatDateDisplay(top.end_date)}.`;
   }
 
   if ((normalized.includes("turun") || normalized.includes("penurunan")) && normalized.includes("tinggi")) {
@@ -1706,13 +1807,13 @@ async function generateFallbackReply(question: string): Promise<string> {
       province_query: province?.name,
     });
 
-    if (!result.ok) return result.message || "Saya belum bisa mengambil data penurunan komoditas.";
+    if (!result.ok) return result.message || "Waduh, datanya belum bisa diambil nih. Coba lagi ya!";
     const top = result.results?.[0];
     if (!top) {
-      return `Saya tidak menemukan komoditas yang turun pada periode tersebut${result.scope === "province" ? ` di ${result.province}` : ""}.`;
+      return `Nggak ada komoditas yang turun pada periode itu${result.scope === "province" ? ` di ${result.province}` : ""}.`;
     }
 
-    return `${result.scope === "province" ? `Di ${result.province}` : "Secara nasional"}, komoditas dengan penurunan terbesar ${result.requested_days} hari terakhir adalah ${top.commodity}. Harganya berubah dari ${formatRupiah(top.start_price)} menjadi ${formatRupiah(top.end_price)} pada ${formatDateDisplay(top.end_date)} (${formatPercent(top.change_pct)} atau ${formatSignedRupiah(top.change)}).`;
+    return `${result.scope === "province" ? `Di ${result.province}` : "Secara nasional"}, yang turun paling banyak ${result.requested_days} hari terakhir itu **${top.commodity}**. Dari ${formatRupiah(top.start_price)} jadi ${formatRupiah(top.end_price)} (${formatPercent(top.change_pct)}). Data per ${formatDateDisplay(top.end_date)}.`;
   }
 
   if ((normalized.includes("provinsi mana") || normalized.includes("provinsi apa")) && inferredCommodity) {
@@ -1723,13 +1824,13 @@ async function generateFallbackReply(question: string): Promise<string> {
       limit: 1,
     });
 
-    if (!result.ok) return result.message || "Saya belum bisa membandingkan harga antar provinsi.";
+    if (!result.ok) return result.message || "Hmm, datanya belum bisa diambil. Coba lagi ya!";
     const top = result.results?.[0];
     if (!top) {
-      return `Saya belum menemukan data lintas provinsi untuk ${inferredCommodity.name}.`;
+      return `Belum ada data lintas provinsi buat ${inferredCommodity.name} nih.`;
     }
 
-    return `Pada ${formatDateDisplay(result.latest_date)}, ${inferredCommodity.name} ${direction === "cheapest" ? "paling murah" : "paling mahal"} ada di ${top.province} dengan harga ${formatRupiah(top.price)}/${top.unit}.`;
+    return `${inferredCommodity.name} ${direction === "cheapest" ? "paling murah" : "paling mahal"} ada di **${top.province}** dengan harga **${formatRupiah(top.price)}/${top.unit}** (${formatDateDisplay(result.latest_date)}). Mau bandingin provinsi lain?`;
   }
 
   if (province && (normalized.includes("termurah") || normalized.includes("termahal"))) {
@@ -1740,13 +1841,13 @@ async function generateFallbackReply(question: string): Promise<string> {
       limit: 1,
     });
 
-    if (!result.ok) return result.message || "Saya belum bisa mengambil data harga provinsi tersebut.";
+    if (!result.ok) return result.message || "Hmm, datanya belum bisa diambil. Coba lagi ya!";
     const top = result.results?.[0];
     if (!top) {
-      return `Saya belum menemukan data harga terbaru untuk ${province.name}.`;
+      return `Belum ada data harga terbaru buat ${province.name} nih.`;
     }
 
-    return `Pada ${formatDateDisplay(result.latest_date)}, komoditas ${direction === "cheapest" ? "termurah" : "termahal"} di ${result.province} adalah ${top.commodity} dengan harga ${formatRupiah(top.price)}/${top.unit}.`;
+    return `Komoditas ${direction === "cheapest" ? "termurah" : "termahal"} di **${result.province}** itu **${top.commodity}** seharga ${formatRupiah(top.price)}/${top.unit} (${formatDateDisplay(result.latest_date)}).`;
   }
 
   if (normalized.includes("termurah") || normalized.includes("termahal") || normalized.includes("paling murah") || normalized.includes("paling mahal")) {
@@ -1759,23 +1860,23 @@ async function generateFallbackReply(question: string): Promise<string> {
         limit: 5,
       });
 
-      if (!result.ok) return result.message || "Saya belum bisa membandingkan harga komoditas itu antar provinsi.";
+      if (!result.ok) return result.message || "Hmm, datanya belum bisa diambil. Coba lagi ya!";
       const top = result.results?.[0];
       if (!top) {
-        return `Saya belum menemukan data per provinsi untuk ${inferredCommodity.name}.`;
+        return `Belum ada data per provinsi buat ${inferredCommodity.name} nih.`;
       }
 
-      return `Pada ${formatDateDisplay(result.latest_date)}, ${inferredCommodity.name} ${direction === "cheapest" ? "paling murah" : "paling mahal"} ada di ${top.province} dengan harga ${formatRupiah(top.price)}/${top.unit}.`;
+      return `${inferredCommodity.name} ${direction === "cheapest" ? "paling murah" : "paling mahal"} ada di **${top.province}** seharga ${formatRupiah(top.price)}/${top.unit} (${formatDateDisplay(result.latest_date)}).`;
     }
 
     const result = await getLatestNationalPrices({ direction, limit: 5 });
-    if (!result.ok) return result.message || "Saya belum bisa mengambil daftar harga nasional terbaru.";
+    if (!result.ok) return result.message || "Hmm, datanya belum bisa diambil. Coba lagi ya!";
     const top = result.results?.[0];
     if (!top) {
-      return "Saya belum menemukan daftar harga nasional terbaru.";
+      return "Belum ada data harga nasional nih.";
     }
 
-    return `Pada ${formatDateDisplay(result.latest_date)}, komoditas ${direction === "cheapest" ? "termurah" : "termahal"} secara nasional adalah ${top.commodity} dengan harga rata-rata ${formatRupiah(top.price)}/${top.unit}.`;
+    return `Komoditas ${direction === "cheapest" ? "termurah" : "termahal"} secara nasional itu **${top.commodity}** seharga ${formatRupiah(top.price)}/${top.unit} (${formatDateDisplay(result.latest_date)}).`;
   }
 
   if ((normalized.includes("berapa harga") || normalized.includes("harga")) && inferredCommodity) {
@@ -1784,13 +1885,13 @@ async function generateFallbackReply(question: string): Promise<string> {
       province_query: province?.name,
     });
 
-    if (!result.ok) return result.message || "Saya belum bisa mengambil harga terbaru komoditas tersebut.";
+    if (!result.ok) return result.message || "Hmm, harganya belum ketemu. Coba lagi ya!";
 
     if (result.scope === "province") {
-      return `Harga terbaru ${result.commodity} di ${result.province} pada ${formatDateDisplay(result.latest_date)} adalah ${formatRupiah(result.price ?? 0)}/${result.unit}.`;
+      return `**${result.commodity}** di ${result.province} sekarang **${formatRupiah(result.price ?? 0)}/${result.unit}** (data ${formatDateDisplay(result.latest_date)}). Mau bandingin sama provinsi lain?`;
     }
 
-    return `Harga rata-rata nasional ${result.commodity} pada ${formatDateDisplay(result.latest_date)} adalah ${formatRupiah(result.price ?? 0)}/${result.unit}.`;
+    return `**${result.commodity}** rata-rata nasional sekarang **${formatRupiah(result.price ?? 0)}/${result.unit}** (data ${formatDateDisplay(result.latest_date)}). Mau cek di provinsi tertentu?`;
   }
 
   if ((normalized.includes("berapa harga") || normalized.includes("harga")) && commodityCandidates.length > 1) {
@@ -1825,12 +1926,13 @@ async function generateFallbackReply(question: string): Promise<string> {
 
     if (!result.ok) return result.message || "Saya belum bisa mengambil perubahan harga komoditas tersebut.";
 
-    const directionLabel = (result.change ?? 0) > 0 ? "naik" : (result.change ?? 0) < 0 ? "turun" : "stabil";
+    const change = result.change ?? 0;
+    const directionLabel = change > 0 ? "naik" : change < 0 ? "turun" : "stabil";
     const points = result.points || [];
     const firstPoint = points[0];
     const lastPoint = points[points.length - 1];
 
-    return `${inferredCommodity.name}${result.scope === "province" ? ` di ${result.province}` : " secara nasional"} ${directionLabel} dari ${formatRupiah(firstPoint?.price ?? 0)} menjadi ${formatRupiah(lastPoint?.price ?? 0)}/${result.unit} pada periode ${formatDateDisplay(result.start_date)} sampai ${formatDateDisplay(result.end_date)} (${formatPercent(result.change_pct ?? 0)}).`;
+    return `**${inferredCommodity.name}**${result.scope === "province" ? ` di ${result.province}` : " nasional"} ${directionLabel} dari ${formatRupiah(firstPoint?.price ?? 0)} jadi ${formatRupiah(lastPoint?.price ?? 0)}/${result.unit} (${formatPercent(result.change_pct ?? 0)}) selama ${formatDateDisplay(result.start_date)} s/d ${formatDateDisplay(result.end_date)}.`;
   }
 
   if ((normalized.includes("riwayat") || normalized.includes("historis") || normalized.includes("trend") || normalized.includes("tren")) && inferredCommodity) {
@@ -1840,27 +1942,29 @@ async function generateFallbackReply(question: string): Promise<string> {
       days: extractRequestedDays(question),
     });
 
-    if (!result.ok) return result.message || "Saya belum bisa mengambil histori komoditas tersebut.";
+    if (!result.ok) return result.message || "Hmm, histori harganya belum bisa diambil. Coba lagi ya!";
 
     const points = result.points || [];
     const firstPoint = points[0];
     const lastPoint = points[points.length - 1];
     if (!firstPoint || !lastPoint) {
-      return `Saya belum menemukan histori harga untuk ${inferredCommodity.name}${result.scope === "province" ? ` di ${result.province}` : ""}.`;
+      return `Belum ada histori harga buat ${inferredCommodity.name}${result.scope === "province" ? ` di ${result.province}` : ""} nih.`;
     }
 
-    return `Untuk ${inferredCommodity.name}${result.scope === "province" ? ` di ${result.province}` : " secara nasional"}, periode ${formatDateDisplay(result.start_date)} sampai ${formatDateDisplay(result.end_date)} bergerak dari ${formatRupiah(firstPoint.price ?? 0)} menjadi ${formatRupiah(lastPoint.price ?? 0)}/${result.unit} (${formatPercent(result.change_pct ?? 0)} atau ${formatSignedRupiah(result.change ?? 0)}).`;
+    const hChange = result.change ?? 0;
+    const hLabel = hChange > 0 ? "naik" : hChange < 0 ? "turun" : "stabil";
+    return `Tren **${inferredCommodity.name}**${result.scope === "province" ? ` di ${result.province}` : " nasional"}: ${hLabel} dari ${formatRupiah(firstPoint.price ?? 0)} jadi ${formatRupiah(lastPoint.price ?? 0)}/${result.unit} (${formatPercent(result.change_pct ?? 0)}) selama ${formatDateDisplay(result.start_date)} s/d ${formatDateDisplay(result.end_date)}.`;
   }
 
   if (commodityCandidates.length > 1) {
-    return `Saya menemukan beberapa jenis untuk ${commodityGroupLabel}. Coba perjelas salah satunya, misalnya ${commodityCandidates.slice(0, 3).map((item) => item.name).join(", ")}.`;
+    return `Ada beberapa jenis ${commodityGroupLabel.toLowerCase()} nih. Maksudnya yang mana? Misalnya ${commodityCandidates.slice(0, 3).map((item) => item.name).join(", ")}?`;
   }
 
   if (inferredCommodity || province) {
-    return "Saya bisa bantu, tapi pertanyaannya masih kurang spesifik. Coba sebutkan yang ingin dicari: harga terbaru, perubahan 7/30 hari, komoditas termurah/termahal, atau perbandingan antar provinsi.";
+    return `Oke, kamu mau tahu apa soal ${inferredCommodity?.name || ""}${province ? ` di ${province.name}` : ""}? Misalnya: harga terbaru, tren naik/turun, atau perbandingan antar provinsi?`;
   }
 
-  return "Saya bisa bantu analisis harga pangan, tapi perlu detail yang lebih jelas. Misalnya: komoditas apa, provinsi mana, dan periode berapa hari yang ingin dibandingkan.";
+  return "Saya bisa bantu soal harga pangan! 😊 Coba kasih tau komoditasnya apa dan mau tahu info apa — harga terbaru, tren, perbandingan, dll.";
 }
 
 function sanitizeHistory(messages: ClientChatMessage[]): ClientChatMessage[] {
