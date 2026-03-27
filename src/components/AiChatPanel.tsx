@@ -147,7 +147,18 @@ export function AiChatPanel({ latestDate }: AiChatPanelProps) {
                   : "border border-warm-200 bg-white text-warm-700"
               }`}
             >
-              <p className="whitespace-pre-wrap">{message.content}</p>
+              {message.role === "user" ? (
+                <p className="whitespace-pre-wrap">{message.content}</p>
+              ) : (
+                <div
+                  className="whitespace-pre-wrap prose-chat"
+                  dangerouslySetInnerHTML={{
+                    __html: message.content
+                      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+                      .replace(/\n/g, "<br />"),
+                  }}
+                />
+              )}
             </div>
           </div>
         ))}

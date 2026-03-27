@@ -93,16 +93,23 @@ const DEFAULT_MODEL = process.env.OLLAMA_MODEL || process.env.AI_MODEL || "qwen3
 const DEFAULT_OPENAI_BASE_URL = (process.env.AI_BASE_URL || "https://api.openai.com/v1").replace(/\/$/, "");
 const DEFAULT_OLLAMA_BASE_URL = (process.env.OLLAMA_BASE_URL || "https://ollama.com").replace(/\/$/, "");
 const SYSTEM_PROMPT = [
-  "Kamu adalah Pai, asisten virtual Pangan.id yang ramah, cerdas, dan santai.",
-  "Kamu ahli dalam data harga pangan Indonesia dari Bank Indonesia PIHPS.",
-  "Jawab dengan gaya percakapan yang natural — santai tapi tetap informatif dan akurat.",
-  "Boleh pakai emoji sesekali (🌶️📈📉🍚) untuk membuat jawaban lebih hidup, tapi jangan berlebihan.",
-  "Gunakan tool untuk mengambil data harga, tren, perbandingan — jangan mengarang angka.",
-  "Jika user bertanya sesuatu yang di luar topik pangan, jawab singkat dengan ramah lalu tawarkan bantuan soal harga pangan.",
-  "Jika user menyapa atau ngobrol ringan, balas dengan hangat lalu tawarkan bantuan.",
-  "Jawab dalam Bahasa Indonesia. Boleh pakai bahasa gaul/informal kalau user juga pakai bahasa informal.",
-  "Jika ada gap tanggal karena akhir pekan atau hari tanpa update, jelaskan secara singkat bila relevan.",
-  "Jangan terlalu panjang — jawaban 2-4 kalimat biasanya cukup, kecuali user minta detail.",
+  "Kamu adalah Pai, customer service virtual Pangan.id.",
+  "Kamu berinteraksi layaknya manusia asli — hangat, santai, dan helpful.",
+  "Kamu WAJIB menggunakan tool yang tersedia untuk mengambil data harga sebelum menjawab. Jangan pernah mengarang angka.",
+  "Gaya bicara: natural, santai, seperti teman yang kebetulan jago soal harga pangan.",
+  "Boleh pakai emoji, bold (**text**), dan format markdown untuk membuat jawaban lebih enak dibaca.",
+  "Jika user menyapa, balas dengan ramah dan personal. Perkenalkan diri singkat kalau perlu.",
+  "Jika user bertanya di luar topik pangan, jawab singkat lalu arahkan balik. Jangan menolak mentah-mentah.",
+  "Selalu tawarkan follow-up yang relevan di akhir jawaban. Contoh: 'Mau cek provinsi lain?' atau 'Mau lihat trennya?'",
+  "Kalau user pakai bahasa gaul, balas pakai bahasa gaul juga.",
+  "Jawab dalam Bahasa Indonesia. Jawaban singkat 2-4 kalimat, kecuali user minta detail.",
+  "Kalau data menunjukkan harga naik/turun signifikan, kasih insight singkat tanpa diminta.",
+  "",
+  "PENTING — Komoditas ambigu:",
+  "Jika user menyebut nama komoditas yang UMUM/GENERIK (contoh: 'cabe', 'cabai', 'beras', 'minyak goreng', 'gula', 'daging'),",
+  "JANGAN langsung pilih 1 jenis. Gunakan tool get_commodity_group_prices untuk ambil harga SEMUA variannya.",
+  "Tampilkan semua varian dalam bentuk list, lalu tanya user yang mana yang dimaksud.",
+  "Contoh komoditas yang punya banyak varian: cabai (4 jenis), beras (6 jenis), minyak goreng (3 jenis), gula (2 jenis), daging sapi (2 jenis).",
 ].join(" ");
 
 const PROVINCE_ALIASES: Record<string, string> = {
@@ -176,8 +183,30 @@ const PROVINCE_ALIASES: Record<string, string> = {
   "sorong": "papua barat daya",
 };
 
-// Informal/slang commodity aliases → formal partial match strings
+// Informal/slang commodity aliases -> formal partial match strings
+// IMPORTANT: Sorted by specificity. More specific aliases MUST come before generic ones.
 const COMMODITY_ALIASES: Record<string, string> = {
+  // --- Beras (specific first) ---
+  "beras super 2": "beras kualitas super ii",
+  "beras super ii": "beras kualitas super ii",
+  "beras super 1": "beras kualitas super i",
+  "beras super i": "beras kualitas super i",
+  "beras super": "beras kualitas super",
+  "beras medium 2": "beras kualitas medium ii",
+  "beras medium ii": "beras kualitas medium ii",
+  "beras medium 1": "beras kualitas medium i",
+  "beras medium i": "beras kualitas medium i",
+  "beras medium": "beras kualitas medium",
+  "beras bawah 2": "beras kualitas bawah ii",
+  "beras bawah ii": "beras kualitas bawah ii",
+  "beras bawah 1": "beras kualitas bawah i",
+  "beras bawah i": "beras kualitas bawah i",
+  "beras bawah": "beras kualitas bawah",
+  "beras mahal": "beras kualitas super",
+  "beras bagus": "beras kualitas super",
+  "beras murah": "beras kualitas bawah",
+  // --- Cabai ---
+  "cabe rawit merah": "cabai rawit merah",
   "cabe ijo": "cabai rawit hijau",
   "cabai ijo": "cabai rawit hijau",
   "cabe hijau": "cabai rawit hijau",
@@ -187,25 +216,31 @@ const COMMODITY_ALIASES: Record<string, string> = {
   "cabe keriting": "cabai merah keriting",
   "cabe besar": "cabai merah besar",
   "cabe rawit": "cabai rawit",
-  "cabe rawit merah": "cabai rawit merah",
+  // --- Minyak goreng ---
   "migor": "minyak goreng curah",
   "migos": "minyak goreng curah",
-  "minyak goreng": "minyak goreng",
+  "minyak goreng kemasan 1": "minyak goreng kemasan bermerek 1",
+  "minyak goreng kemasan 2": "minyak goreng kemasan bermerek 2",
+  // --- Telur ---
   "telor": "telur ayam ras segar",
   "telor ayam": "telur ayam ras segar",
+  "telur": "telur ayam ras segar",
+  // --- Bawang ---
   "bamer": "bawang merah ukuran sedang",
   "baput": "bawang putih ukuran sedang",
   "bawang merah": "bawang merah ukuran sedang",
   "bawang putih": "bawang putih ukuran sedang",
+  // --- Daging ---
+  "daging sapi 1": "daging sapi kualitas 1",
+  "daging sapi 2": "daging sapi kualitas 2",
   "daging ayam": "daging ayam ras segar",
   "ayam potong": "daging ayam ras segar",
   "daging sapi": "daging sapi kualitas 1",
+  // --- Gula ---
+  "gula premium": "gula pasir kualitas premium",
+  "gula lokal": "gula pasir lokal",
   "gula": "gula pasir",
   "gulpas": "gula pasir",
-  "beras": "beras",
-  "beras murah": "beras kualitas bawah",
-  "beras bagus": "beras kualitas super",
-  "beras mahal": "beras kualitas super",
 };
 
 const FOOD_SCOPE_KEYWORDS = [
@@ -516,6 +551,37 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
           },
         },
         required: ["commodity_query"],
+        additionalProperties: false,
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "get_commodity_group_prices",
+      description:
+        "Ambil harga terbaru untuk SEMUA varian komoditas dalam satu kategori/grup. " +
+        "Gunakan ini saat user menyebut nama komoditas yang generik/umum seperti 'cabai', 'beras', 'minyak goreng', 'gula', 'daging'. " +
+        "Tool ini akan mengembalikan semua varian beserta harganya.",
+      parameters: {
+        type: "object",
+        properties: {
+          group_keyword: {
+            type: "string",
+            description:
+              "Kata kunci grup komoditas, misalnya: 'cabai', 'beras', 'minyak goreng', 'gula pasir', 'daging'.",
+          },
+          province_query: {
+            type: "string",
+            description: "Nama provinsi jika ingin harga provinsi tertentu.",
+          },
+          market_type: {
+            type: "string",
+            enum: ["traditional", "modern"],
+            description: "Jenis pasar yang ingin dipakai.",
+          },
+        },
+        required: ["group_keyword"],
         additionalProperties: false,
       },
     },
@@ -1617,6 +1683,147 @@ async function compareCommodityAcrossProvinces(args: Record<string, unknown>) {
   };
 }
 
+async function getCommodityGroupPrices(args: Record<string, unknown>) {
+  const groupKeyword = getString(args.group_keyword);
+  if (!groupKeyword) {
+    return { ok: false, message: "Kata kunci grup komoditas wajib diisi." };
+  }
+
+  const marketType = getMarketType(args.market_type);
+  const provinceQuery = getString(args.province_query);
+  const { commodities } = await getReferenceData();
+  const normalizedKeyword = normalizeText(groupKeyword);
+
+  // Find all commodities matching the keyword
+  const matchingCommodities = commodities.filter((c) => {
+    const name = normalizeText(c.name);
+    const slug = normalizeText(c.slug.replace(/-/g, " "));
+    return name.includes(normalizedKeyword) || slug.includes(normalizedKeyword);
+  });
+
+  if (matchingCommodities.length === 0) {
+    return { ok: false, message: `Tidak ada komoditas yang cocok dengan grup "${groupKeyword}".` };
+  }
+
+  const province = provinceQuery ? await resolveProvince(provinceQuery) : null;
+  if (provinceQuery && !province) {
+    return { ok: false, message: `Provinsi "${provinceQuery}" tidak ditemukan.` };
+  }
+
+  // Try PIHPS API first for national prices (more accurate)
+  if (!province) {
+    try {
+      const today = new Date().toISOString().split("T")[0];
+      const startDate = getDateDaysAgo(today, 7);
+      const pihpsMarketType = marketType === "modern" ? "modern" : "traditional";
+      const roundTo50 = (n: number) => Math.round(n / 50) * 50;
+
+      const results = await Promise.all(
+        matchingCommodities.map(async (commodity) => {
+          try {
+            const table = await fetchPihpsCommodityTable(commodity.slug, startDate, today, pihpsMarketType);
+            const nationalValues = table.nationalRow?.values || {};
+            const sortedDates = Object.keys(nationalValues).sort();
+            const latestDate = sortedDates[sortedDates.length - 1];
+            if (latestDate && nationalValues[latestDate]) {
+              return {
+                commodity: commodity.name,
+                unit: commodity.unit,
+                price: roundTo50(nationalValues[latestDate]),
+                date: latestDate,
+              };
+            }
+            return null;
+          } catch {
+            return null;
+          }
+        })
+      );
+
+      const validResults = results.filter((r): r is NonNullable<typeof r> => r !== null);
+      if (validResults.length > 0) {
+        return {
+          ok: true,
+          scope: "national",
+          group: groupKeyword,
+          count: validResults.length,
+          latest_date: validResults[0].date,
+          results: validResults.sort((a, b) => a.price - b.price),
+        };
+      }
+    } catch {
+      // Fall through to DB
+    }
+  }
+
+  // Fallback: use Supabase data
+  if (province) {
+    const latestDate = await getLatestProvinceDate(province.id, marketType);
+    if (!latestDate) {
+      return { ok: false, message: `Belum ada data untuk ${province.name}.` };
+    }
+
+    const commodityIds = matchingCommodities.map((c) => c.id);
+    const commodityMap = new Map(matchingCommodities.map((c) => [c.id, c]));
+
+    const { data } = await serverSupabase
+      .from("prices")
+      .select("commodity_id, price")
+      .eq("province_id", province.id)
+      .eq("market_type", marketType)
+      .eq("date", latestDate)
+      .in("commodity_id", commodityIds)
+      .gt("price", 0);
+
+    const results = (data || []).map((row) => ({
+      commodity: commodityMap.get(Number(row.commodity_id))?.name || `Komoditas ${row.commodity_id}`,
+      unit: commodityMap.get(Number(row.commodity_id))?.unit || "Kg",
+      price: Math.round(Number(row.price)),
+    })).sort((a, b) => a.price - b.price);
+
+    return {
+      ok: true,
+      scope: "province",
+      province: province.name,
+      group: groupKeyword,
+      count: results.length,
+      latest_date: latestDate,
+      results,
+    };
+  }
+
+  const latestDate = await getLatestNationalDate(marketType);
+  if (!latestDate) {
+    return { ok: false, message: "Belum ada data nasional yang tersedia." };
+  }
+
+  const commodityIds = matchingCommodities.map((c) => c.id);
+  const commodityMap = new Map(matchingCommodities.map((c) => [c.id, c]));
+
+  const { data } = await serverSupabase
+    .from("national_averages")
+    .select("commodity_id, avg_price")
+    .eq("market_type", marketType)
+    .eq("date", latestDate)
+    .in("commodity_id", commodityIds)
+    .gt("avg_price", 0);
+
+  const results = (data || []).map((row) => ({
+    commodity: commodityMap.get(Number(row.commodity_id))?.name || `Komoditas ${row.commodity_id}`,
+    unit: commodityMap.get(Number(row.commodity_id))?.unit || "Kg",
+    price: Math.round(Number(row.avg_price)),
+  })).sort((a, b) => a.price - b.price);
+
+  return {
+    ok: true,
+    scope: "national",
+    group: groupKeyword,
+    count: results.length,
+    latest_date: latestDate,
+    results,
+  };
+}
+
 async function executeTool(name: string, args: Record<string, unknown>) {
   switch (name) {
     case "get_site_overview":
@@ -1631,6 +1838,8 @@ async function executeTool(name: string, args: Record<string, unknown>) {
       return getCommodityHistory(args);
     case "compare_commodity_across_provinces":
       return compareCommodityAcrossProvinces(args);
+    case "get_commodity_group_prices":
+      return getCommodityGroupPrices(args);
     default:
       return { ok: false, message: `Tool ${name} tidak dikenali.` };
   }
@@ -1718,31 +1927,9 @@ function hasFoodScopeSignals(normalized: string, commodity: CommodityRef | null,
 function canUseDeterministicReply(question: string): boolean {
   const normalized = normalizeText(question);
 
-  // Clearly out of scope -> deterministic rejection
-  if (isClearlyOutOfScopeQuestion(normalized)) return true;
-
-  // Greetings, small talk, vague questions -> let LLM handle naturally
-  const isGreeting = /^(halo|hai|hi|hey|helo|selamat|pagi|siang|sore|malam|apa kabar|yo|woi|bang|kak|min)\b/.test(normalized);
-  const isSmallTalk = /^(siapa kamu|kamu siapa|apa itu pangan|bisa apa|fitur|bantuan|help|terima kasih|makasih|thanks|ok|oke|good|bagus|mantap)\b/.test(normalized);
-  if (isGreeting || isSmallTalk) return false;
-
-  // Common food-related patterns -> fast deterministic reply
-  return (
-    FOOD_SCOPE_KEYWORDS.some((keyword) => normalized.includes(normalizeText(keyword))) ||
-    normalized.includes("naik") ||
-    normalized.includes("turun") ||
-    normalized.includes("termurah") ||
-    normalized.includes("termahal") ||
-    normalized.includes("murah") ||
-    normalized.includes("mahal") ||
-    normalized.includes("harga") ||
-    normalized.includes("berapa") ||
-    normalized.includes("provinsi mana") ||
-    normalized.includes("riwayat") ||
-    normalized.includes("historis") ||
-    normalized.includes("tren") ||
-    normalized.includes("trend")
-  );
+  // ONLY intercept clearly out-of-scope questions.
+  // Everything else goes to the real LLM for natural, human-like responses.
+  return isClearlyOutOfScopeQuestion(normalized);
 }
 
 async function generateFallbackReply(question: string): Promise<string> {
