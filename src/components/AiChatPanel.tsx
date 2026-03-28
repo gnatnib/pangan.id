@@ -164,11 +164,21 @@ export function AiChatPanel({ latestDate }: AiChatPanelProps) {
         ))}
 
         {isLoading && (
-          <div className="flex justify-start">
-            <div className="rounded-2xl border border-warm-200 bg-white px-4 py-3 text-sm text-warm-500 shadow-sm">
-              Sedang menganalisis data pangan...
+          <motion.div
+            className="flex justify-start"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25 }}
+          >
+            <div className="rounded-2xl border border-warm-200 bg-white px-4 py-3 shadow-sm flex items-center gap-3">
+              <div className="flex items-center gap-1">
+                <span className="typing-dot" style={{ animationDelay: "0ms" }} />
+                <span className="typing-dot" style={{ animationDelay: "150ms" }} />
+                <span className="typing-dot" style={{ animationDelay: "300ms" }} />
+              </div>
+              <span className="text-sm text-warm-400">Pai sedang berpikir...</span>
             </div>
-          </div>
+          </motion.div>
         )}
 
         {error && (
