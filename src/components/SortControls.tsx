@@ -1,6 +1,5 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 
 interface SortControlsProps {
@@ -17,12 +16,6 @@ const options = [
 ];
 
 export function SortControls({ value, onChange }: SortControlsProps) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -38,30 +31,20 @@ export function SortControls({ value, onChange }: SortControlsProps) {
         return (
           <motion.button
             key={opt.value}
-            initial={{ opacity: 0, y: 6 }}
-            animate={{ opacity: 1, y: 0 }}
+            initial={{ opacity: 0, y: 6, backgroundColor: "#f5ece4", color: "#8a6a55" }}
+            animate={{
+              opacity: 1,
+              y: 0,
+              backgroundColor: isActive ? "#4a3427" : "#f5ece4",
+              color: isActive ? "#ffffff" : "#8a6a55",
+            }}
             transition={{ duration: 0.25, delay: i * 0.05, ease: "easeOut" }}
             whileHover={{ scale: 1.04 }}
             whileTap={{ scale: 0.96 }}
             onClick={() => onChange(opt.value)}
-            className={`relative overflow-hidden rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
-              isActive
-                ? "text-white"
-                : "bg-warm-100 text-warm-500 hover:bg-warm-200 hover:text-warm-700"
-            }`}
+            className="rounded-md px-3 py-1.5 text-xs font-medium shadow-sm"
           >
-            {isActive && (
-              mounted ? (
-                <motion.span
-                  layoutId="sort-active-bg"
-                  className="absolute inset-0 rounded-md bg-warm-800"
-                  transition={{ type: "spring", stiffness: 380, damping: 32 }}
-                />
-              ) : (
-                <span className="absolute inset-0 rounded-md bg-warm-800" />
-              )
-            )}
-            <span className="relative z-10">{opt.label}</span>
+            {opt.label}
           </motion.button>
         );
       })}
