@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 
 interface SortControlsProps {
@@ -16,6 +17,12 @@ const options = [
 ];
 
 export function SortControls({ value, onChange }: SortControlsProps) {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 6 }}
@@ -23,7 +30,7 @@ export function SortControls({ value, onChange }: SortControlsProps) {
       transition={{ duration: 0.3, ease: "easeOut" }}
       className="flex flex-wrap items-center gap-2 text-sm"
     >
-      <span className="text-xs text-warm-400 uppercase tracking-wide mr-1">
+      <span className="mr-1 text-xs uppercase tracking-wide text-warm-400">
         Urutkan:
       </span>
       {options.map((opt, i) => {
@@ -34,21 +41,25 @@ export function SortControls({ value, onChange }: SortControlsProps) {
             initial={{ opacity: 0, y: 6 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.25, delay: i * 0.05, ease: "easeOut" }}
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
+            whileHover={{ scale: 1.04 }}
+            whileTap={{ scale: 0.96 }}
             onClick={() => onChange(opt.value)}
-            className={`relative px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+            className={`relative overflow-hidden rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
               isActive
                 ? "text-white"
                 : "bg-warm-100 text-warm-500 hover:bg-warm-200 hover:text-warm-700"
             }`}
           >
             {isActive && (
-              <motion.span
-                layoutId="sort-active-bg"
-                className="absolute inset-0 rounded-md bg-warm-800"
-                transition={{ type: "spring", stiffness: 400, damping: 35 }}
-              />
+              mounted ? (
+                <motion.span
+                  layoutId="sort-active-bg"
+                  className="absolute inset-0 rounded-md bg-warm-800"
+                  transition={{ type: "spring", stiffness: 380, damping: 32 }}
+                />
+              ) : (
+                <span className="absolute inset-0 rounded-md bg-warm-800" />
+              )
             )}
             <span className="relative z-10">{opt.label}</span>
           </motion.button>
