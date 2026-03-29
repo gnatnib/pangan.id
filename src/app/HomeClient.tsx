@@ -62,6 +62,7 @@ export function HomeClient() {
   const sparklines = data?.sparklines ?? {};
 
   const [sort, setSort] = useState("change-desc");
+  const [searchQuery, setSearchQuery] = useState("");
   const normalizeProvinceName = (value: string) =>
     value
       .toLowerCase()
@@ -153,7 +154,14 @@ export function HomeClient() {
   }, [mapCommodityId, mapStart, mapEnd, provinces, summaries]);
 
   const sorted = useMemo(() => {
-    const arr = [...summaries];
+    const query = searchQuery.trim().toLowerCase();
+    const filtered = query
+      ? summaries.filter((summary) =>
+          summary.commodity.name.toLowerCase().includes(query)
+        )
+      : summaries;
+
+    const arr = [...filtered];
     switch (sort) {
       case "change-desc":
         return arr.sort((a, b) => b.priceChangePct - a.priceChangePct);
@@ -168,13 +176,14 @@ export function HomeClient() {
       default:
         return arr;
     }
-  }, [summaries, sort]);
+  }, [summaries, sort, searchQuery]);
 
   const upCount = summaries.filter((s) => s.priceChange > 0).length;
   const downCount = summaries.filter((s) => s.priceChange < 0).length;
   const stableCount = summaries.filter((s) => s.priceChange === 0).length;
 
   const hasData = summaries.length > 0;
+  const hasFilteredData = sorted.length > 0;
 
   const selectedCommodity = summaries.find((s) => s.commodity.id === mapCommodityId);
   const mapAvg = selectedCommodity?.avgPrice || 0;
@@ -337,8 +346,64 @@ export function HomeClient() {
 
       {/* Sort controls */}
       {(hasData || loading) && (
-        <div className="mb-5">
+        <div className="mb-5 space-y-3">
           <SortControls value={sort} onChange={setSort} />
+
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.3, ease: "easeOut", delay: 0.08 }}
+            className="relative"
+          >
+            <span className="pointer-events-none absolute inset-y-0 left-4 flex items-center text-warm-400">
+              <svg
+                className="h-4 w-4"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.8}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="m21 21-4.35-4.35m1.85-5.15a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"
+                />
+              </svg>
+            </span>
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Cari komoditas, misalnya bawang, cabai, atau beras..."
+              className="w-full rounded-2xl border border-warm-200/80 bg-white/90 py-3 pr-12 pl-11 text-sm text-warm-700 shadow-[0_8px_30px_rgba(222,184,135,0.08)] outline-none transition-all placeholder:text-warm-300 focus:border-brand-orange/60 focus:bg-white focus:ring-4 focus:ring-brand-orange/10"
+            />
+            {searchQuery && (
+              <motion.button
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                whileTap={{ scale: 0.92 }}
+                type="button"
+                onClick={() => setSearchQuery("")}
+                className="absolute inset-y-0 right-3 my-auto flex h-8 w-8 items-center justify-center rounded-full bg-warm-100 text-warm-500 transition hover:bg-warm-200 hover:text-warm-700"
+                aria-label="Hapus pencarian"
+              >
+                <svg
+                  className="h-4 w-4"
+                  fill="none"
+                  viewBox="0 0 24 24"
+                  stroke="currentColor"
+                  strokeWidth={1.8}
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    d="M6 18 18 6M6 6l12 12"
+                  />
+                </svg>
+              </motion.button>
+            )}
+          </motion.div>
         </div>
       )}
 
@@ -350,16 +415,48 @@ export function HomeClient() {
           ))}
         </div>
       ) : hasData ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 mb-8">
-          {sorted.map((summary, i) => (
-            <PriceCard
-              key={summary.commodity.id}
-              summary={summary}
-              index={i}
-              sparkData={sparklines[summary.commodity.id]}
-            />
-          ))}
-        </div>
+        hasFilteredData ? (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4 mb-8">
+            {sorted.map((summary, i) => (
+              <PriceCard
+                key={summary.commodity.id}
+                summary={summary}
+                index={i}
+                sparkData={sparklines[summary.commodity.id]}
+              />
+            ))}
+          </div>
+        ) : (
+          <motion.div
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.25 }}
+            className="card mb-8 rounded-3xl border border-dashed border-warm-200/80 p-10 text-center"
+          >
+            <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-full bg-warm-100 text-warm-500">
+              <svg
+                className="h-6 w-6"
+                fill="none"
+                viewBox="0 0 24 24"
+                stroke="currentColor"
+                strokeWidth={1.8}
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  d="m21 21-4.35-4.35m1.85-5.15a7 7 0 1 1-14 0 7 7 0 0 1 14 0Z"
+                />
+              </svg>
+            </div>
+            <h3 className="text-base font-semibold text-warm-800">
+              Komoditas tidak ditemukan
+            </h3>
+            <p className="mt-2 text-sm text-warm-500">
+              Tidak ada hasil untuk “{searchQuery}”. Coba kata kunci lain seperti bawang,
+              cabai, atau beras.
+            </p>
+          </motion.div>
+        )
       ) : (
         <div className="card p-12 text-center mb-8">
           <p className="text-lg text-warm-400 mb-2">📊</p>
